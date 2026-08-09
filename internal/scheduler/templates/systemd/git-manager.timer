@@ -1,0 +1,21 @@
+[Unit]
+Description=git-manager daily sync
+Documentation=man:systemd.timer(5)
+Requires=git-manager.service
+
+[Timer]
+# Run daily at 2 AM local time
+OnCalendar=daily
+OnCalendar=*-*-* 02:00:00
+
+# Randomize the start time by up to 5 minutes to avoid thundering herd
+# if multiple machines all sync at exactly the same time.
+RandomizedDelaySec=5min
+
+# If the system was powered off at the scheduled time, run the sync
+# once the system comes back up (within one hour of boot).
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

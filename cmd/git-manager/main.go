@@ -12,6 +12,7 @@ import (
 
 	"github.com/Odilhao/git-manager/internal/config"
 	"github.com/Odilhao/git-manager/internal/gitcli"
+	"github.com/Odilhao/git-manager/internal/scheduler"
 	"github.com/Odilhao/git-manager/internal/status"
 	"github.com/Odilhao/git-manager/internal/sync"
 )
@@ -35,6 +36,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runSync(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "install":
+		return runInstall(args[1:], stdout, stderr)
+	case "uninstall":
+		return runUninstall(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "git-manager: unknown command %q\n", args[0])
 		return 1
@@ -190,4 +195,48 @@ func printReport(w io.Writer, report sync.Report) {
 		}
 	}
 	fmt.Fprintf(w, "%d repo(s), %d error(s)\n", len(report.Repos), report.ErrorCount)
+}
+
+// runInstall installs the git-manager scheduler (systemd/launchd).
+func runInstall(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dryRun := fs.Bool("dry-run", false, "report what would change without applying it")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	result, err := scheduler.Install(context.Background(), scheduler.InstallOptions{DryRun: *dryRun})
+	if err != nil {
+		fmt.Fprintf(stderr, "git-manager install: %v\n", err)
+		return 1
+	}
+
+	for _, action := range result.Actions {
+		fmt.Fprintln(stdout, action)
+	}
+
+	return 0
+}
+
+// runUninstall uninstalls the git-manager scheduler (systemd/launchd).
+func runUninstall(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dryRun := fs.Bool("dry-run", false, "report what would change without applying it")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	result, err := scheduler.Uninstall(context.Background(), scheduler.UninstallOptions{DryRun: *dryRun})
+	if err != nil {
+		fmt.Fprintf(stderr, "git-manager uninstall: %v\n", err)
+		return 1
+	}
+
+	for _, action := range result.Actions {
+		fmt.Fprintln(stdout, action)
+	}
+
+	return 0
 }
