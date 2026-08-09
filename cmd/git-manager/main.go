@@ -40,6 +40,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runInstall(args[1:], stdout, stderr)
 	case "uninstall":
 		return runUninstall(args[1:], stdout, stderr)
+	case "add":
+		return runAdd(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "git-manager: unknown command %q\n", args[0])
 		return 1
