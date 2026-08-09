@@ -12,6 +12,7 @@ import (
 
 	"github.com/Odilhao/git-manager/internal/config"
 	"github.com/Odilhao/git-manager/internal/gitcli"
+	"github.com/Odilhao/git-manager/internal/status"
 	"github.com/Odilhao/git-manager/internal/sync"
 )
 
@@ -32,6 +33,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "sync":
 		return runSync(args[1:], stdout, stderr)
+	case "status":
+		return runStatus(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "git-manager: unknown command %q\n", args[0])
 		return 1
@@ -81,6 +84,79 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// runStatus reports per-repo drift without changing anything: it runs the
+// same plan sync would apply (sync.Run with DryRun: true) and reshapes the
+// result as a drift report rather than an apply report.
+func runStatus(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	configPath := fs.String("config", "", "path to the git-manager TOML config file (required)")
+	jsonOut := fs.Bool("json", false, "report as JSON instead of human-readable text")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if *configPath == "" {
+		fmt.Fprintln(stderr, "git-manager status: -config is required")
+		return 2
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "git-manager status: %v\n", err)
+		return 2
+	}
+
+	syncReport := sync.Run(context.Background(), gitcli.NewClient(), cfg, sync.Options{DryRun: true})
+	report := status.FromSyncReport(syncReport)
+
+	if *jsonOut {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(report); err != nil {
+			fmt.Fprintf(stderr, "git-manager status: encode report: %v\n", err)
+			return 2
+		}
+	} else {
+		printStatusReport(stdout, report)
+	}
+
+	if report.Drifted {
+		return 1
+	}
+	return 0
+}
+
+func printStatusReport(w io.Writer, report status.Report) {
+	for _, r := range report.Repos {
+		if r.Error != "" {
+			fmt.Fprintf(w, "FAIL %s: %s\n", r.Name, r.Error)
+			continue
+		}
+		if !r.Drifted {
+			fmt.Fprintf(w, "in sync   %s (%s)\n", r.Name, r.Path)
+			continue
+		}
+		fmt.Fprintf(w, "drift     %s (%s)\n", r.Name, r.Path)
+		if r.Cloned {
+			fmt.Fprintln(w, "       not cloned")
+		}
+		for _, c := range r.Remotes.Added {
+			fmt.Fprintf(w, "       remote missing: %s -> %s\n", c.Name, c.URL)
+		}
+		for _, c := range r.Remotes.Updated {
+			fmt.Fprintf(w, "       remote stale:   %s -> %s\n", c.Name, c.URL)
+		}
+		for _, c := range r.Remotes.Removed {
+			fmt.Fprintf(w, "       remote undeclared: %s\n", c.Name)
+		}
+		for _, m := range r.Identity.Mismatched {
+			fmt.Fprintf(w, "       identity mismatch: %s = %s\n", m.Key, m.Value)
+		}
+	}
+	fmt.Fprintf(w, "%d repo(s), %d error(s)\n", len(report.Repos), report.ErrorCount)
 }
 
 func printReport(w io.Writer, report sync.Report) {
