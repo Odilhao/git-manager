@@ -1,0 +1,36 @@
+{
+  "repos": [
+    {
+      "name": "example-project",
+      "path": "<placeholder-group-path>/example-project",
+      "cloned": true,
+      "remotes": {
+        "Added": [
+          {
+            "Name": "origin",
+            "URL": "<placeholder-repo-url>"
+          }
+        ],
+        "Updated": null,
+        "Removed": null
+      },
+      "identity": {
+        "Written": null
+      },
+      "fetches": [
+        {
+          "remote": "origin",
+          "report": {
+            "Mode": "all",
+            "RefSpecs": null,
+            "Branches": null
+          }
+        }
+      ],
+      "error": ""
+    }
+  ],
+  "dry_run": true,
+  "overwrite": false,
+  "error_count": 0
+}
