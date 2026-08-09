@@ -15,23 +15,46 @@ import (
 // to enable testing of all OS code paths on any platform.
 type envGetter func(string) string
 
+// ConfigDirPath returns the path to the git-manager config directory without
+// creating it. The path is determined by the platform: XDG_CONFIG_HOME/git-manager
+// on Linux (or ~/.config/git-manager if XDG_CONFIG_HOME is unset),
+// ~/Library/Application Support/git-manager on macOS, or %AppData%\git-manager
+// on Windows. This function does not touch the filesystem.
+func ConfigDirPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("platform: config path: get home: %w", err)
+	}
+
+	return computeConfigPath(runtime.GOOS, home, os.Getenv)
+}
+
 // ConfigDir returns the path to the git-manager config directory, creating
 // it with 0o700 permissions if it doesn't exist. The path is determined by
 // the platform: XDG_CONFIG_HOME/git-manager on Linux (or ~/.config/git-manager
 // if XDG_CONFIG_HOME is unset), ~/Library/Application Support/git-manager on
 // macOS, or %AppData%\git-manager on Windows.
 func ConfigDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("platform: config dir: get home: %w", err)
-	}
-
-	path, err := computeConfigPath(runtime.GOOS, home, os.Getenv)
+	path, err := ConfigDirPath()
 	if err != nil {
 		return "", err
 	}
 
 	return ensureDir(path)
+}
+
+// StateDirPath returns the path to the git-manager state directory without
+// creating it. The path is determined by the platform: XDG_STATE_HOME/git-manager
+// on Linux (or ~/.local/state/git-manager if XDG_STATE_HOME is unset),
+// ~/Library/Application Support/git-manager on macOS, or %AppData%\git-manager
+// on Windows. This function does not touch the filesystem.
+func StateDirPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("platform: state path: get home: %w", err)
+	}
+
+	return computeStatePath(runtime.GOOS, home, os.Getenv)
 }
 
 // StateDir returns the path to the git-manager state directory, creating
@@ -40,12 +63,7 @@ func ConfigDir() (string, error) {
 // if XDG_STATE_HOME is unset), ~/Library/Application Support/git-manager on
 // macOS, or %AppData%\git-manager on Windows.
 func StateDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("platform: state dir: get home: %w", err)
-	}
-
-	path, err := computeStatePath(runtime.GOOS, home, os.Getenv)
+	path, err := StateDirPath()
 	if err != nil {
 		return "", err
 	}

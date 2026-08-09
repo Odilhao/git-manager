@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.example.git-manager</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__GIT_MANAGER_BINARY__</string>
+		<string>sync</string>
+		<string>-config</string>
+		<string>__CONFIG_PATH__</string>
+	</array>
+	<key>StandardOutPath</key>
+	<string>__LOG_PATH__/git-manager.log</string>
+	<key>StandardErrorPath</key>
+	<string>__LOG_PATH__/git-manager-error.log</string>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>2</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>UserName</key>
+	<string>__USERNAME__</string>
+</dict>
+</plist>
