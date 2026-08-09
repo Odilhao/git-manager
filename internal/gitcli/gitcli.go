@@ -90,6 +90,31 @@ func (c *Client) RemoteRemove(ctx context.Context, repo, name string) error {
 	return err
 }
 
+// RemoteList returns repo's current remotes as a name -> URL map. Fetch and
+// push URLs are assumed identical, matching how this tool ever sets them
+// (RemoteAdd/RemoteSetURL only ever configure a single URL per remote).
+func (c *Client) RemoteList(ctx context.Context, repo string) (map[string]string, error) {
+	out, err := run(ctx, "-C", repo, "remote", "-v")
+	if err != nil {
+		return nil, err
+	}
+	remotes := make(map[string]string)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Each line is "<name>\t<url> (fetch|push)"; take fetch and skip push
+		// so a remote with mismatched fetch/push URLs still reports one.
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[2] != "(fetch)" {
+			continue
+		}
+		remotes[fields[0]] = fields[1]
+	}
+	return remotes, nil
+}
+
 // ConfigGet reads key from repo's config at scope ("local", "global" or
 // "system").
 func (c *Client) ConfigGet(ctx context.Context, repo, scope, key string) (string, error) {

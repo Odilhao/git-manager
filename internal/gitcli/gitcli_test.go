@@ -113,6 +113,49 @@ func TestRemoteAddSetURLRemove(t *testing.T) {
 	}
 }
 
+func TestRemoteListReturnsCurrentRemotes(t *testing.T) {
+	repo := initRepo(t)
+	c := NewClient()
+	ctx := context.Background()
+
+	if err := c.RemoteAdd(ctx, repo, "origin", "https://example.com/octocat/example.git"); err != nil {
+		t.Fatalf("RemoteAdd: %v", err)
+	}
+	if err := c.RemoteAdd(ctx, repo, "fork", "https://example.com/octocat/example-fork.git"); err != nil {
+		t.Fatalf("RemoteAdd: %v", err)
+	}
+
+	got, err := c.RemoteList(ctx, repo)
+	if err != nil {
+		t.Fatalf("RemoteList: %v", err)
+	}
+	want := map[string]string{
+		"origin": "https://example.com/octocat/example.git",
+		"fork":   "https://example.com/octocat/example-fork.git",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("RemoteList = %v, want %v", got, want)
+	}
+	for name, url := range want {
+		if got[name] != url {
+			t.Fatalf("RemoteList[%q] = %q, want %q", name, got[name], url)
+		}
+	}
+}
+
+func TestRemoteListEmptyRepoHasNoRemotes(t *testing.T) {
+	repo := initRepo(t)
+	c := NewClient()
+
+	got, err := c.RemoteList(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("RemoteList: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("RemoteList on a fresh repo = %v, want empty", got)
+	}
+}
+
 func TestConfigSetAndGet(t *testing.T) {
 	repo := initRepo(t)
 	c := NewClient()
