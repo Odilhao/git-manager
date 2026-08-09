@@ -1,0 +1,20 @@
+[Unit]
+Description=git-manager sync
+Documentation=man:git-manager(1)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=__GIT_MANAGER_BINARY__ sync -config __CONFIG_PATH__
+
+# Output goes to the system journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=git-manager
+
+# Per-user service: runs with the invoking user's uid/gid
+# Credentials are managed by the user's existing git/SSH/GPG setup;
+# this service never reads, writes, or requires any credential.
+
+[Install]
+WantedBy=default.target
