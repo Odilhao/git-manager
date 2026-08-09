@@ -219,6 +219,148 @@ func TestRunSync_ReturnsNonZeroOnRepoError(t *testing.T) {
 	}
 }
 
+func TestRunStatus_RequiresConfigFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2 when -config is missing", code)
+	}
+	if stderr.Len() == 0 {
+		t.Fatal("expected an error message on stderr when -config is missing")
+	}
+}
+
+func TestRunStatus_MissingConfigFileIsAnError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "-config", filepath.Join(t.TempDir(), "does-not-exist.toml")}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2 for a missing config file", code)
+	}
+}
+
+func TestRunStatus_InSyncRepoReturnsZeroAndDoesNotClone(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	repoPath := filepath.Join(groupPath, "example-project")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runFixture(t, repoPath, "init", "-b", "main")
+	runFixture(t, repoPath, "remote", "add", "origin", fileURL(origin))
+	configPath := writeConfig(t, groupPath, fileURL(origin))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "-config", configPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "file.txt")); err == nil {
+		t.Fatal("status cloned/fetched into the repo, but it should be read-only")
+	}
+}
+
+func TestRunStatus_RemoteDriftReturnsOneAndReportsIt(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	repoPath := filepath.Join(groupPath, "example-project")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runFixture(t, repoPath, "init", "-b", "main")
+	// origin points somewhere other than the config's declared URL.
+	runFixture(t, repoPath, "remote", "add", "origin", "https://example.com/octocat/stale.git")
+	configPath := writeConfig(t, groupPath, fileURL(origin))
+
+	before, err := exec.Command("git", "-C", repoPath, "config", "--local", "--list").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git config --list: %v\n%s", err, before)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "-config", configPath}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 for remote drift; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("origin")) {
+		t.Fatalf("expected the drift report to mention the drifted remote, got: %s", stdout.String())
+	}
+
+	after, err := exec.Command("git", "-C", repoPath, "config", "--local", "--list").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git config --list: %v\n%s", err, after)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("status mutated local git config:\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+func TestRunStatus_IdentityDriftReturnsOne(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	repoPath := filepath.Join(groupPath, "example-project")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runFixture(t, repoPath, "init", "-b", "main")
+	runFixture(t, repoPath, "remote", "add", "origin", fileURL(origin))
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	contents := "[defaults]\n" +
+		"user_email = \"octocat@example.com\"\n\n" +
+		"[[groups]]\n" +
+		"name = \"work\"\n" +
+		"path = \"" + filepath.ToSlash(groupPath) + "\"\n\n" +
+		"  [[groups.repos]]\n" +
+		"  name = \"example-project\"\n\n" +
+		"    [groups.repos.remotes.origin]\n" +
+		"    url = \"" + fileURL(origin) + "\"\n"
+	if err := os.WriteFile(configPath, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "-config", configPath}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 for identity drift; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
+	}
+
+	out, err := exec.Command("git", "-C", repoPath, "config", "--local", "--get", "user.email").CombinedOutput()
+	if err == nil {
+		t.Fatalf("status wrote user.email into local git config, want it left unset: %s", out)
+	}
+}
+
+func TestRunStatus_JSONOutputShape(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	repoPath := filepath.Join(groupPath, "example-project")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runFixture(t, repoPath, "init", "-b", "main")
+	runFixture(t, repoPath, "remote", "add", "origin", fileURL(origin))
+	configPath := writeConfig(t, groupPath, fileURL(origin))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "-config", configPath, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+	if _, ok := decoded["drifted"].(bool); !ok {
+		t.Fatalf("drifted field missing or not a bool: %v", decoded["drifted"])
+	}
+	repos, ok := decoded["repos"].([]any)
+	if !ok || len(repos) != 1 {
+		t.Fatalf("repos field missing or not an array of length 1: %v", decoded["repos"])
+	}
+}
+
 func TestRunUnknownCommandIsAnError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"bogus"}, &stdout, &stderr)
