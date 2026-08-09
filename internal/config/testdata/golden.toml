@@ -1,0 +1,41 @@
+[defaults]
+user_name = "Octocat"
+user_email = "octocat@example.com"
+signing_method = "gpg"
+signing_key = "ABCDEF1234567890"
+
+[[groups]]
+name = "work"
+path = "~/code/work"
+user_email = "octocat@work.example.com"
+signing_method = "ssh"
+signing_key = "~/.ssh/work_signing.pub"
+
+  [[groups.repos]]
+  name = "example-project"
+  # no identity/signing fields here => inherits the group's (ssh, work email)
+
+    [groups.repos.remotes.origin]
+    url = "git@github.com:example-org/example-project.git"
+    [groups.repos.remotes.fork]
+    url = "git@github.com:octocat/example-project.git"
+
+  [[groups.repos]]
+  name = "other-project"
+  signing_method = "none"
+  # repo overrides the group's signing_method; user_email still inherits from group
+
+    [groups.repos.remotes.origin]
+    url = "git@github.com:example-org/other-project.git"
+
+[[groups]]
+name = "personal"
+path = "~/code/personal"
+# no identity/signing fields at group level => falls through to defaults
+
+  [[groups.repos]]
+  name = "untouched-project"
+  # no identity/signing fields anywhere but defaults
+
+    [groups.repos.remotes.origin]
+    url = "https://example.com/octocat/untouched-project.git"

@@ -1,0 +1,10 @@
+[[groups]]
+name = "work"
+path = "~/code/work"
+
+  [[groups.repos]]
+  name = "example-project"
+  signing_method = "pgp"
+
+    [groups.repos.remotes.origin]
+    url = "git@github.com:example-org/example-project.git"
