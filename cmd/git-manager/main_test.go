@@ -123,6 +123,45 @@ func TestRunSync_DryRunJSONReportsWithoutCloning(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(groupPath, "example-project")); err == nil {
 		t.Fatal("--dry-run actually cloned the repo")
 	}
+
+	// Load and compare against the golden file to verify the JSON structure
+	// matches the expected format.
+	goldenData, err := os.ReadFile("testdata/sync_dryrun.golden")
+	if err != nil {
+		t.Fatalf("failed to load golden file: %v", err)
+	}
+
+	var goldenReport sync.Report
+	if err := json.Unmarshal(goldenData, &goldenReport); err != nil {
+		t.Fatalf("golden file is not valid JSON: %v", err)
+	}
+
+	// Compare structure: both should have same number of repos, same dry_run/overwrite/error_count values
+	if report.DryRun != goldenReport.DryRun {
+		t.Fatalf("report.DryRun = %v, want %v", report.DryRun, goldenReport.DryRun)
+	}
+	if report.Overwrite != goldenReport.Overwrite {
+		t.Fatalf("report.Overwrite = %v, want %v", report.Overwrite, goldenReport.Overwrite)
+	}
+	if len(report.Repos) != len(goldenReport.Repos) {
+		t.Fatalf("len(report.Repos) = %d, want %d", len(report.Repos), len(goldenReport.Repos))
+	}
+
+	// Verify the repo structure matches
+	rr := report.Repos[0]
+	grr := goldenReport.Repos[0]
+	if rr.Name != grr.Name {
+		t.Fatalf("repo.Name = %q, want %q", rr.Name, grr.Name)
+	}
+	if rr.Cloned != grr.Cloned {
+		t.Fatalf("repo.Cloned = %v, want %v", rr.Cloned, grr.Cloned)
+	}
+	if len(rr.Remotes.Added) != len(grr.Remotes.Added) {
+		t.Fatalf("len(Remotes.Added) = %d, want %d", len(rr.Remotes.Added), len(grr.Remotes.Added))
+	}
+	if len(rr.Fetches) != len(grr.Fetches) {
+		t.Fatalf("len(Fetches) = %d, want %d", len(rr.Fetches), len(grr.Fetches))
+	}
 }
 
 func TestRunSync_ActuallyClonesAndReturnsZero(t *testing.T) {
