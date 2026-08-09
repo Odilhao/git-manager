@@ -407,3 +407,50 @@ func TestRunUnknownCommandIsAnError(t *testing.T) {
 		t.Fatal("expected non-zero exit code for an unknown command")
 	}
 }
+
+func TestRunInstall_DryRunOutputsActionsAndReturnsZero(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_STATE_HOME", "")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"install", "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stdout.Len() == 0 {
+		t.Fatal("expected stdout output for install --dry-run")
+	}
+	output := stdout.String()
+	if stdout.Len() == 0 {
+		t.Fatal("expected non-empty stdout")
+	}
+	// The output should contain some action descriptions. On the test platform,
+	// it will be a "would write" or similar message, or a "not yet supported" message
+	// on Windows. Just verify there's some content.
+	if len(output) == 0 {
+		t.Fatal("expected action output but got empty string")
+	}
+}
+
+func TestRunUninstall_DryRunOutputsActionsAndReturnsZero(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_STATE_HOME", "")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"uninstall", "--dry-run"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stdout.Len() == 0 {
+		t.Fatal("expected stdout output for uninstall --dry-run")
+	}
+	output := stdout.String()
+	// The output should contain some action descriptions.
+	if len(output) == 0 {
+		t.Fatal("expected action output but got empty string")
+	}
+}
