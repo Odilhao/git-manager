@@ -45,6 +45,11 @@ type RepoConfig struct {
 // RemoteConfig is a `[groups.repos.remotes.<name>]` table.
 type RemoteConfig struct {
 	URL string `toml:"url"`
+	// Branches selects which branches to fetch from this remote: "" fetches
+	// everything (git fetch's own default), a glob (e.g. "release/*") or a
+	// regex (e.g. "^(main|develop)$") filters it. See internal/sync's
+	// FetchBranches for the exact glob/regex distinction and semantics.
+	Branches string `toml:"branches"`
 }
 
 var validSigningMethods = map[string]bool{

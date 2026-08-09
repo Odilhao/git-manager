@@ -19,6 +19,7 @@ signing_key = "~/.ssh/work_signing.pub"
     url = "git@github.com:example-org/example-project.git"
     [groups.repos.remotes.fork]
     url = "git@github.com:octocat/example-project.git"
+    branches = "release/*"
 
   [[groups.repos]]
   name = "other-project"

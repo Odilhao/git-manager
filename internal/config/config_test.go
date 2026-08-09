@@ -38,6 +38,12 @@ func TestLoadGolden(t *testing.T) {
 	if got, want := example.Remotes["fork"].URL, "git@github.com:octocat/example-project.git"; got != want {
 		t.Fatalf("fork URL = %q, want %q", got, want)
 	}
+	if got, want := example.Remotes["fork"].Branches, "release/*"; got != want {
+		t.Fatalf("fork Branches = %q, want %q", got, want)
+	}
+	if got := example.Remotes["origin"].Branches; got != "" {
+		t.Fatalf("origin Branches = %q, want empty (unset means fetch everything)", got)
+	}
 }
 
 func TestLoadRejectsUnknownKey(t *testing.T) {
@@ -110,7 +116,7 @@ func TestResolveThreeLevelMerge(t *testing.T) {
 	}
 	wantRemotes := map[string]RemoteConfig{
 		"origin": {URL: "git@github.com:example-org/example-project.git"},
-		"fork":   {URL: "git@github.com:octocat/example-project.git"},
+		"fork":   {URL: "git@github.com:octocat/example-project.git", Branches: "release/*"},
 	}
 	if !reflect.DeepEqual(example.Remotes, wantRemotes) {
 		t.Fatalf("example-project.Remotes = %+v, want %+v", example.Remotes, wantRemotes)
