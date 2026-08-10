@@ -21,14 +21,48 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
+// usageSummary is the top-level help output for no args, "help", "-h" and
+// "--help": one line per subcommand, reusing each runXxx's own doc-comment
+// description rather than restating it.
+const usageSummary = `git-manager keeps local git checkouts in sync with a declarative TOML config.
+
+Usage:
+  git-manager <command> [flags]
+
+Commands:
+  sync       clones missing repos, reconciles their declared remotes, and applies configured identity/signing settings
+  status     reports per-repo drift without changing anything: it runs the same plan sync would apply and reshapes the result as a drift report rather than an apply report
+  add        scaffolds a config entry from a checkout that already exists on disk: it inspects the repo's actual remotes and local git identity/signing config and emits a schema-valid TOML snippet reproducing them, appended to the target config file
+  install    installs the git-manager scheduler (systemd/launchd)
+  uninstall  uninstalls the git-manager scheduler (systemd/launchd)
+
+Run 'git-manager <command> -h' for details on a specific command.
+`
+
+// helpRequested reports whether args starts with a help request. It is
+// checked before flag.Parse runs so "-h"/"--help" never fall into
+// flag.ErrHelp's own exit-2 path, and "help" is recognized even though the
+// flag package would otherwise treat it as an ordinary positional argument.
+func helpRequested(args []string) bool {
+	return len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help")
+}
+
+// printSubcommandHelp writes usageLine followed by fs's registered flags to
+// stdout; shared by every subcommand's -h/--help/help path.
+func printSubcommandHelp(stdout io.Writer, fs *flag.FlagSet, usageLine string) {
+	fmt.Fprintln(stdout, usageLine)
+	fs.SetOutput(stdout)
+	fs.PrintDefaults()
+}
+
 // run dispatches to a subcommand and returns the process exit code. It
 // takes stdout/stderr as parameters, rather than using os.Stdout/os.Stderr
 // directly, so tests can capture output without touching the real process
 // streams.
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: git-manager <command> [flags]")
-		return 1
+	if len(args) == 0 || helpRequested(args) {
+		fmt.Fprint(stdout, usageSummary)
+		return 0
 	}
 
 	switch args[0] {
@@ -48,6 +82,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
+// runSync clones missing repos, reconciles their declared remotes, and
+// applies configured identity/signing settings.
 func runSync(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -57,6 +93,10 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 	prune := fs.Bool("prune", false, "remove undeclared remotes during reconciliation (alias: --overwrite)")
 	jsonOut := fs.Bool("json", false, "report as JSON instead of human-readable text")
 	parallel := fs.Int("parallel", 0, "number of repos to sync in parallel (default 4; 0 means default)")
+	if helpRequested(args) {
+		printSubcommandHelp(stdout, fs, "usage: git-manager sync -config <path> [flags]")
+		return 0
+	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -103,6 +143,10 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	configPath := fs.String("config", "", "path to the git-manager TOML config file (required)")
 	jsonOut := fs.Bool("json", false, "report as JSON instead of human-readable text")
 	parallel := fs.Int("parallel", 0, "number of repos to check in parallel (default 4; 0 means default)")
+	if helpRequested(args) {
+		printSubcommandHelp(stdout, fs, "usage: git-manager status -config <path> [flags]")
+		return 0
+	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -206,6 +250,10 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("install", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dryRun := fs.Bool("dry-run", false, "report what would change without applying it")
+	if helpRequested(args) {
+		printSubcommandHelp(stdout, fs, "usage: git-manager install [flags]")
+		return 0
+	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -228,6 +276,10 @@ func runUninstall(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dryRun := fs.Bool("dry-run", false, "report what would change without applying it")
+	if helpRequested(args) {
+		printSubcommandHelp(stdout, fs, "usage: git-manager uninstall [flags]")
+		return 0
+	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
