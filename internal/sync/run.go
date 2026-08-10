@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/Odilhao/git-manager/internal/config"
@@ -29,6 +30,9 @@ type Options struct {
 	// project's --overwrite/--prune flags both map to this one behavior).
 	// origin is never removed, declared or not.
 	Overwrite bool
+	// Concurrency is the number of repos to sync in parallel. If 0 or negative,
+	// defaults to 4.
+	Concurrency int
 }
 
 // FetchResult pairs one declared remote with what fetching it did or, in
@@ -80,25 +84,68 @@ type Report struct {
 // Run syncs every repo declared in cfg: resolves its local path, clones it
 // if missing, reconciles its remotes, applies its identity/signing config,
 // and fetches from each declared remote — in that order. One repo's error is
-// recorded on its RepoResult rather than aborting the rest.
+// recorded on its RepoResult rather than aborting the rest. Repos are synced
+// concurrently up to opts.Concurrency workers (defaulting to 4 if unset or ≤ 0).
+// Report.Repos is returned in declaration order, independent of completion order.
 func Run(ctx context.Context, real Client, cfg *config.Config, opts Options) Report {
 	start := time.Now()
 	resolved, _ := cfg.Resolve() // Resolve never actually returns a non-nil error today.
 
 	report := Report{DryRun: opts.DryRun, Overwrite: opts.Overwrite}
 
-	i := 0
+	// Count total repos to pre-allocate results slice (no append races, deterministic order).
+	totalRepos := 0
+	for _, g := range cfg.Groups {
+		totalRepos += len(g.Repos)
+	}
+
+	if totalRepos == 0 {
+		report.DurationMS = time.Since(start).Milliseconds()
+		return report
+	}
+
+	// Pre-allocate results indexed by declaration order.
+	results := make([]RepoResult, totalRepos)
+
+	// Determine effective concurrency: default to 4 if unset or ≤ 0.
+	concurrency := opts.Concurrency
+	if concurrency <= 0 {
+		concurrency = 4
+	}
+
+	// Semaphore: buffered channel of size concurrency acts as a token bucket.
+	semaphore := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+
+	// Launch goroutines for each repo, respecting the concurrency limit.
+	repoIdx := 0
 	for _, g := range cfg.Groups {
 		for _, r := range g.Repos {
-			rr := resolved[i]
-			i++
-			result := syncRepo(ctx, real, g.Path, r.Name, rr, opts)
-			if result.Error != "" {
-				report.ErrorCount++
-			}
-			report.Repos = append(report.Repos, result)
+			idx := repoIdx // Capture for the goroutine.
+			rr := resolved[idx]
+			repoIdx++
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				// Acquire a semaphore token; block if at capacity.
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }() // Release the token.
+				results[idx] = syncRepo(ctx, real, g.Path, r.Name, rr, opts)
+			}()
 		}
 	}
+
+	wg.Wait()
+	report.Repos = results
+
+	// Count errors now that all goroutines have finished (no races).
+	for _, r := range results {
+		if r.Error != "" {
+			report.ErrorCount++
+		}
+	}
+
 	report.DurationMS = time.Since(start).Milliseconds()
 	return report
 }

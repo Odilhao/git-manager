@@ -56,6 +56,7 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 	overwrite := fs.Bool("overwrite", false, "remove undeclared remotes during reconciliation (alias: --prune)")
 	prune := fs.Bool("prune", false, "remove undeclared remotes during reconciliation (alias: --overwrite)")
 	jsonOut := fs.Bool("json", false, "report as JSON instead of human-readable text")
+	parallel := fs.Int("parallel", 0, "number of repos to sync in parallel (default 4; 0 means default)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -73,7 +74,7 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	opts := sync.Options{DryRun: *dryRun, Overwrite: *overwrite || *prune}
+	opts := sync.Options{DryRun: *dryRun, Overwrite: *overwrite || *prune, Concurrency: *parallel}
 	report := sync.Run(context.Background(), gitcli.NewClient(), cfg, opts)
 
 	if *jsonOut {
@@ -101,6 +102,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	configPath := fs.String("config", "", "path to the git-manager TOML config file (required)")
 	jsonOut := fs.Bool("json", false, "report as JSON instead of human-readable text")
+	parallel := fs.Int("parallel", 0, "number of repos to check in parallel (default 4; 0 means default)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -116,7 +118,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	syncReport := sync.Run(context.Background(), gitcli.NewClient(), cfg, sync.Options{DryRun: true})
+	syncReport := sync.Run(context.Background(), gitcli.NewClient(), cfg, sync.Options{DryRun: true, Concurrency: *parallel})
 	report := status.FromSyncReport(syncReport)
 
 	if *jsonOut {
