@@ -75,6 +75,3 @@ jobs:
         with:
           files: |
             dist/git-manager-*
-            dist/git-manager-*.sha256
-            dist/git-manager-*.tar.gz
-            dist/git-manager-*.tar.gz.sha256
