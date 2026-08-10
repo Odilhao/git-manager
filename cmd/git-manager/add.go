@@ -24,6 +24,10 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 	groupName := fs.String("group", "", "group the new entry belongs to (required)")
 	repoName := fs.String("name", "", "repo name for the new entry (required)")
 	dryRun := fs.Bool("dry-run", false, "print the generated entry without writing it")
+	if helpRequested(args) {
+		printSubcommandHelp(stdout, fs, "usage: git-manager add -config <path> -group <name> -name <name> [flags] [path]")
+		return 0
+	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

@@ -65,6 +65,27 @@ func TestRunAdd_RequiresConfigGroupAndName(t *testing.T) {
 	}
 }
 
+// TestRunAdd_HelpFlagsPrintFlagUsageAndReturnZero checks -h/--help/help are
+// handled before fs.Parse, so they never require -config/-group/-name and
+// never collide with flag.ErrHelp's usual exit-2 path.
+func TestRunAdd_HelpFlagsPrintFlagUsageAndReturnZero(t *testing.T) {
+	for _, flag := range []string{"-h", "--help", "help"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"add", flag}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("run([add %q]) = %d, want 0; stderr: %s", flag, code, stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("run([add %q]) wrote to stderr, want stdout only: %s", flag, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), "-group") {
+				t.Fatalf("run([add %q]) usage missing flag -group:\n%s", flag, stdout.String())
+			}
+		})
+	}
+}
+
 func TestRunAdd_NonRepoPathIsAnError(t *testing.T) {
 	configPath := writeEmptyConfig(t)
 	notARepo := t.TempDir()

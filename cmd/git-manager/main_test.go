@@ -663,6 +663,126 @@ func TestRunUnknownCommandIsAnError(t *testing.T) {
 	}
 }
 
+// TestRun_NoArgsPrintsUsageAndReturnsZero covers the no-args top-level case,
+// which today prints a one-line usage message to stderr and exits 1; issue
+// #51 requires it to behave like top-level help instead (stdout, exit 0,
+// every subcommand named).
+func TestRun_NoArgsPrintsUsageAndReturnsZero(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run(nil, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(nil) = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("run(nil) wrote to stderr, want stdout only: %s", stderr.String())
+	}
+	for _, name := range []string{"sync", "status", "add", "install", "uninstall"} {
+		if !strings.Contains(stdout.String(), name) {
+			t.Fatalf("top-level usage missing command %q:\n%s", name, stdout.String())
+		}
+	}
+}
+
+// TestRun_TopLevelHelpFlagsPrintUsageAndReturnZero checks that help, -h and
+// --help all produce the identical top-level summary as the no-args case.
+func TestRun_TopLevelHelpFlagsPrintUsageAndReturnZero(t *testing.T) {
+	for _, flag := range []string{"help", "-h", "--help"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{flag}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("run([%q]) = %d, want 0; stderr: %s", flag, code, stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("run([%q]) wrote to stderr, want stdout only: %s", flag, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), "sync") {
+				t.Fatalf("run([%q]) usage missing %q:\n%s", flag, "sync", stdout.String())
+			}
+		})
+	}
+}
+
+// TestRunSync_HelpFlagsPrintFlagUsageAndReturnZero checks -h/--help/help are
+// handled before fs.Parse: they must never collide with flag.ErrHelp's usual
+// exit-2 path, and they must not require -config.
+func TestRunSync_HelpFlagsPrintFlagUsageAndReturnZero(t *testing.T) {
+	for _, flag := range []string{"-h", "--help", "help"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"sync", flag}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("run([sync %q]) = %d, want 0; stderr: %s", flag, code, stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("run([sync %q]) wrote to stderr, want stdout only: %s", flag, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), "-config") {
+				t.Fatalf("run([sync %q]) usage missing flag -config:\n%s", flag, stdout.String())
+			}
+		})
+	}
+}
+
+func TestRunStatus_HelpFlagsPrintFlagUsageAndReturnZero(t *testing.T) {
+	for _, flag := range []string{"-h", "--help", "help"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"status", flag}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("run([status %q]) = %d, want 0; stderr: %s", flag, code, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), "-config") {
+				t.Fatalf("run([status %q]) usage missing flag -config:\n%s", flag, stdout.String())
+			}
+		})
+	}
+}
+
+func TestRunInstall_HelpFlagsPrintFlagUsageAndReturnZero(t *testing.T) {
+	for _, flag := range []string{"-h", "--help", "help"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"install", flag}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("run([install %q]) = %d, want 0; stderr: %s", flag, code, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), "-dry-run") {
+				t.Fatalf("run([install %q]) usage missing flag -dry-run:\n%s", flag, stdout.String())
+			}
+		})
+	}
+}
+
+func TestRunUninstall_HelpFlagsPrintFlagUsageAndReturnZero(t *testing.T) {
+	for _, flag := range []string{"-h", "--help", "help"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"uninstall", flag}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("run([uninstall %q]) = %d, want 0; stderr: %s", flag, code, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), "-dry-run") {
+				t.Fatalf("run([uninstall %q]) usage missing flag -dry-run:\n%s", flag, stdout.String())
+			}
+		})
+	}
+}
+
+// TestRunSync_UnknownFlagStillErrorsWithExitCode2 pins the pre-existing
+// real-error behavior: an actual unknown flag must keep going through
+// fs.Parse and returning 2, unaffected by the new help-detection branch.
+func TestRunSync_UnknownFlagStillErrorsWithExitCode2(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-bogus-flag"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("run([sync -bogus-flag]) = %d, want 2; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("run([sync -bogus-flag]) wrote to stdout, want stderr only: %s", stdout.String())
+	}
+}
+
 func TestRunInstall_DryRunOutputsActionsAndReturnsZero(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
