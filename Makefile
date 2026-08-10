@@ -1,6 +1,9 @@
 PKGNAME := git-manager
 VERSION := $(shell git describe)
 
+build:
+	CGO_ENABLED=0 go build -o $(PKGNAME) ./cmd/git-manager
+
 dist: $(PKGNAME)-$(VERSION).tar.gz
 	echo $(PKGNAME)-$(VERSION)
 
