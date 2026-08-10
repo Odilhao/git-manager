@@ -2,6 +2,7 @@
 # https://packit.dev/docs/configuration/
 
 specfile_path: .rpm/git-manager.spec
+release_suffix: "{PACKIT_PROJECT_VERSION}"
 
 # name in upstream package repository or registry (e.g. in PyPI)
 upstream_package_name: git-manager
@@ -14,10 +15,19 @@ actions:
     - bash -c 'ls -1t git-manager-*.tar.gz | head -n1'
 
 jobs:
-  - job: copr_build
+  - &copr
+    job: copr_build
     trigger: pull_request
     targets:
-      - fedora-44
+      - fedora-44-aarch64
+      - fedora-44-x86_64
+
+  - <<: *copr
+    trigger: release
+    owner: 'odilhao'
+    project: git-manager
+
+
 
 srpm_build_deps:
   - golang
