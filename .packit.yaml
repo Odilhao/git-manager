@@ -1,12 +1,7 @@
 # See the documentation for more information:
 # https://packit.dev/docs/configuration/
 
-specfile_path: git-manager.spec
-
-# add or remove files that should be synced
-files_to_sync:
-  - git-manager.spec
-  - .packit.yml
+specfile_path: .rpm/git-manager.spec
 
 # name in upstream package repository or registry (e.g. in PyPI)
 upstream_package_name: git-manager
@@ -14,11 +9,8 @@ upstream_package_name: git-manager
 downstream_package_name: git-manager
 
 actions:
-  post-upstream-clone:
-    - "wget https://raw.githubusercontent.com/Odilhao/git-manager/refs/heads/main/.rpm/git-manager.spec -O git-manager.spec"
-    - "wget https://raw.githubusercontent.com/Odilhao/git-manager/refs/heads/main/.rpm/git-manager.spec -O go-vendor-tools.toml"
-  create-archive: 
-    - make dist
+  create-archive:
+    - bash -c "V=$(grep -m1 '^Version:' .rpm/git-manager.spec | awk '{print $2}' | tr -d '\r'); make dist VERSION=$V"
     - bash -c 'ls -1t git-manager-*.tar.gz | head -n1'
 
 jobs:
@@ -30,4 +22,3 @@ jobs:
 srpm_build_deps:
   - golang
   - make
-  - wget
