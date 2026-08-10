@@ -1,0 +1,73 @@
+# Bash completion for git-manager
+# Install by copying this file to /usr/share/bash-completion/completions/ or
+# source it in your ~/.bashrc: source /path/to/git-manager
+
+_git_manager_completions() {
+	local cur prev words cword
+	COMPREPLY=()
+	cur="${COMP_WORDS[COMP_CWORD]}"
+	prev="${COMP_WORDS[COMP_CWORD-1]}"
+	words=("${COMP_WORDS[@]}")
+	cword=$COMP_CWORD
+
+	# Find the subcommand (first non-flag argument after git-manager)
+	local subcommand=""
+	local i
+	for ((i=1; i<cword; i++)); do
+		if [[ "${words[$i]}" != -* ]]; then
+			subcommand="${words[$i]}"
+			break
+		fi
+	done
+
+	# If we're completing the subcommand itself
+	if [[ $cword -eq 1 ]] || ([[ $cword -gt 1 ]] && [[ "$cur" == -* ]] && [[ -z "$subcommand" ]]); then
+		local subcommands="sync status add install uninstall"
+		COMPREPLY=( $(compgen -W "${subcommands}" -- "$cur") )
+		return 0
+	fi
+
+	# Common flags for all commands
+	local common_flags="--help --version"
+
+	# Flags specific to each subcommand
+	case "$subcommand" in
+		sync)
+			local sync_flags="$common_flags --config --dry-run --json --parallel --overwrite --prune"
+			if [[ "$cur" == -* ]]; then
+				COMPREPLY=( $(compgen -W "${sync_flags}" -- "$cur") )
+			fi
+			return 0
+			;;
+		status)
+			local status_flags="$common_flags --config --json --parallel"
+			if [[ "$cur" == -* ]]; then
+				COMPREPLY=( $(compgen -W "${status_flags}" -- "$cur") )
+			fi
+			return 0
+			;;
+		add)
+			local add_flags="$common_flags --config --group --name --dry-run"
+			if [[ "$cur" == -* ]]; then
+				COMPREPLY=( $(compgen -W "${add_flags}" -- "$cur") )
+			fi
+			return 0
+			;;
+		install)
+			local install_flags="$common_flags --dry-run"
+			if [[ "$cur" == -* ]]; then
+				COMPREPLY=( $(compgen -W "${install_flags}" -- "$cur") )
+			fi
+			return 0
+			;;
+		uninstall)
+			local uninstall_flags="$common_flags --dry-run"
+			if [[ "$cur" == -* ]]; then
+				COMPREPLY=( $(compgen -W "${uninstall_flags}" -- "$cur") )
+			fi
+			return 0
+			;;
+	esac
+}
+
+complete -o bashdefault -o default -o nospace -F _git_manager_completions git-manager
