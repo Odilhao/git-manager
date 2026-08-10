@@ -36,7 +36,6 @@ new-release:
 		echo "Error: not on main branch. Switch to main before releasing."; \
 		exit 1; \
 	fi
-	@sed -i 's/\(%define tag \).*/\1$(VERSION)/' .rpm/git-manager.spec
 	@sed -i 's/^\(Version:\).*$$/\1        $(VERSION)/' .rpm/git-manager.spec
 	@git add .rpm/git-manager.spec
 	@git commit -m "chore(release): bump rpm spec version to $(VERSION)"
