@@ -1,0 +1,21 @@
+# Enforce LF line endings for all text files
+* text=auto eol=lf
+
+# Explicit text files with LF
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+*.bash text eol=lf
+Makefile text eol=lf
+*.txt text eol=lf
+
+# Binary files (if any)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
