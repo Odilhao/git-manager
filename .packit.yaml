@@ -17,10 +17,9 @@ actions:
   post-upstream-clone:
     - "wget https://raw.githubusercontent.com/Odilhao/git-manager/refs/heads/main/.rpm/git-manager.spec -O git-manager.spec"
     - "wget https://raw.githubusercontent.com/Odilhao/git-manager/refs/heads/main/.rpm/git-manager.spec -O go-vendor-tools.toml"
-    - git submodule update --init
   create-archive: 
     - make dist
-    - bash -c 'ls -1t foremanctl-*.tar.gz | head -n1'
+    - bash -c 'ls -1t git-manager-*.tar.gz | head -n1'
 
 jobs:
   - job: copr_build
