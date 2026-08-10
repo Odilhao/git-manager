@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/Odilhao/git-manager/internal/status"
 	"github.com/Odilhao/git-manager/internal/sync"
 )
 
@@ -124,6 +126,25 @@ func TestRunSync_DryRunJSONReportsWithoutCloning(t *testing.T) {
 		t.Fatal("--dry-run actually cloned the repo")
 	}
 
+	// duration_ms is real elapsed time; a fast dry-run can legitimately
+	// round to 0ms, so only its presence (never negative) is checked here.
+	// TestRunSync_ActuallyClonesAndReturnsZero, which does a real clone,
+	// checks the un-normalized value is > 0.
+	if report.DurationMS < 0 {
+		t.Fatalf("report.DurationMS = %d, want >= 0", report.DurationMS)
+	}
+	if report.Repos[0].DurationMS < 0 {
+		t.Fatalf("report.Repos[0].DurationMS = %d, want >= 0", report.Repos[0].DurationMS)
+	}
+	if report.Repos[0].Outcome != "success" {
+		t.Fatalf("report.Repos[0].Outcome = %q, want %q", report.Repos[0].Outcome, "success")
+	}
+
+	// Normalize the nondeterministic duration before comparing against the
+	// golden file, whose value is always 0.
+	report.DurationMS = 0
+	report.Repos[0].DurationMS = 0
+
 	// Load and compare against the golden file to verify the JSON structure
 	// matches the expected format.
 	goldenData, err := os.ReadFile("testdata/sync_dryrun.golden")
@@ -142,6 +163,9 @@ func TestRunSync_DryRunJSONReportsWithoutCloning(t *testing.T) {
 	}
 	if report.Overwrite != goldenReport.Overwrite {
 		t.Fatalf("report.Overwrite = %v, want %v", report.Overwrite, goldenReport.Overwrite)
+	}
+	if report.DurationMS != goldenReport.DurationMS {
+		t.Fatalf("normalized report.DurationMS = %v, want %v", report.DurationMS, goldenReport.DurationMS)
 	}
 	if len(report.Repos) != len(goldenReport.Repos) {
 		t.Fatalf("len(report.Repos) = %d, want %d", len(report.Repos), len(goldenReport.Repos))
@@ -162,6 +186,12 @@ func TestRunSync_DryRunJSONReportsWithoutCloning(t *testing.T) {
 	if len(rr.Fetches) != len(grr.Fetches) {
 		t.Fatalf("len(Fetches) = %d, want %d", len(rr.Fetches), len(grr.Fetches))
 	}
+	if rr.Outcome != grr.Outcome {
+		t.Fatalf("repo.Outcome = %q, want %q", rr.Outcome, grr.Outcome)
+	}
+	if rr.DurationMS != grr.DurationMS {
+		t.Fatalf("normalized repo.DurationMS = %v, want %v", rr.DurationMS, grr.DurationMS)
+	}
 }
 
 func TestRunSync_ActuallyClonesAndReturnsZero(t *testing.T) {
@@ -170,12 +200,29 @@ func TestRunSync_ActuallyClonesAndReturnsZero(t *testing.T) {
 	configPath := writeConfig(t, groupPath, fileURL(origin))
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"sync", "-config", configPath}, &stdout, &stderr)
+	code := run([]string{"sync", "-config", configPath, "--json"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(groupPath, "example-project", "file.txt")); err != nil {
 		t.Fatalf("sync did not actually clone the repo: %v", err)
+	}
+
+	var report sync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+	// A real clone over file:// is slow enough relative to a millisecond
+	// clock tick that duration_ms must be strictly positive here, unlike
+	// the fast dry-run planning path.
+	if report.DurationMS <= 0 {
+		t.Fatalf("report.DurationMS = %d, want > 0 for a real clone", report.DurationMS)
+	}
+	if len(report.Repos) != 1 || report.Repos[0].DurationMS <= 0 {
+		t.Fatalf("report.Repos[0].DurationMS = %+v, want > 0 for a real clone", report.Repos)
+	}
+	if report.Repos[0].Outcome != "success" {
+		t.Fatalf("report.Repos[0].Outcome = %q, want %q", report.Repos[0].Outcome, "success")
 	}
 }
 
@@ -255,6 +302,124 @@ func TestRunSync_ReturnsNonZeroOnRepoError(t *testing.T) {
 	code := run([]string{"sync", "-config", configPath}, &stdout, &stderr)
 	if code == 0 {
 		t.Fatal("expected non-zero exit code when a repo fails to sync")
+	}
+}
+
+// TestRunSync_JSONOutcomeFailureGolden exercises the "failure" Outcome value
+// (an error with no activity recorded) and checks it against a golden file,
+// with duration_ms normalized to 0.
+func TestRunSync_JSONOutcomeFailureGolden(t *testing.T) {
+	groupPath := t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	contents := "[[groups]]\n" +
+		"name = \"work\"\n" +
+		"path = \"" + filepath.ToSlash(groupPath) + "\"\n\n" +
+		"  [[groups.repos]]\n" +
+		"  name = \"no-origin\"\n"
+	if err := os.WriteFile(configPath, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-config", configPath, "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit code when a repo fails to sync")
+	}
+
+	var report sync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+	if len(report.Repos) != 1 {
+		t.Fatalf("len(report.Repos) = %d, want 1", len(report.Repos))
+	}
+	if report.Repos[0].Outcome != "failure" {
+		t.Fatalf("report.Repos[0].Outcome = %q, want %q", report.Repos[0].Outcome, "failure")
+	}
+	if report.Repos[0].Error == "" {
+		t.Fatal("report.Repos[0].Error is empty, want the no-origin error")
+	}
+	if report.Repos[0].DurationMS < 0 {
+		t.Fatalf("report.Repos[0].DurationMS = %d, want >= 0", report.Repos[0].DurationMS)
+	}
+
+	report.Repos[0].DurationMS = 0
+	report.Repos[0].Path = "<placeholder-path>"
+	report.Repos[0].Error = "<placeholder-error>"
+	report.DurationMS = 0
+	assertGolden(t, "testdata/sync_failure.golden", report)
+}
+
+// TestRunSync_JSONOutcomePartialGolden exercises the "partial" Outcome value
+// (an error recorded after some activity — here, a remote URL update — was
+// already applied) and checks it against a golden file, with duration_ms
+// normalized to 0.
+func TestRunSync_JSONOutcomePartialGolden(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	repoPath := filepath.Join(groupPath, "example-project")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runFixture(t, repoPath, "init", "-b", "main")
+	runFixture(t, repoPath, "config", "user.name", "Octocat")
+	runFixture(t, repoPath, "config", "user.email", "octocat@example.com")
+	runFixture(t, repoPath, "remote", "add", "origin", fileURL(origin))
+	// Declaring a different, unreachable origin URL forces a recorded
+	// remote update before the subsequent fetch against it fails.
+	configPath := writeConfig(t, groupPath, "https://127.0.0.1:1/does-not-exist.git")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-config", configPath, "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit code for a fetch failure against an unreachable remote")
+	}
+
+	var report sync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+	if len(report.Repos) != 1 {
+		t.Fatalf("len(report.Repos) = %d, want 1", len(report.Repos))
+	}
+	if report.Repos[0].Outcome != "partial" {
+		t.Fatalf("report.Repos[0].Outcome = %q, want %q", report.Repos[0].Outcome, "partial")
+	}
+	if len(report.Repos[0].Remotes.Updated) == 0 {
+		t.Fatalf("report.Repos[0].Remotes.Updated = %+v, want the origin URL update recorded", report.Repos[0].Remotes.Updated)
+	}
+
+	report.Repos[0].DurationMS = 0
+	report.Repos[0].Path = "<placeholder-path>"
+	report.Repos[0].Error = "<placeholder-error>"
+	report.DurationMS = 0
+	assertGolden(t, "testdata/sync_partial.golden", report)
+}
+
+// assertGolden compares v, marshaled with the same indentation the sync/
+// status --json output uses, against the contents of goldenPath.
+func assertGolden(t *testing.T, goldenPath string, v any) {
+	t.Helper()
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	want, err := os.ReadFile(goldenPath)
+	if err != nil {
+		t.Fatalf("failed to load golden file %s: %v", goldenPath, err)
+	}
+	// git checks this repo out with core.autocrlf=true, so a golden file on
+	// disk may carry \r\n while json.Encoder always writes \n; strip \r from
+	// both sides so the comparison is about content, not the checkout's line
+	// endings (the same reason the pre-existing sync_dryrun.golden test
+	// compares unmarshaled fields rather than raw bytes).
+	got := strings.ReplaceAll(buf.String(), "\r\n", "\n")
+	wantNormalized := strings.ReplaceAll(string(want), "\r\n", "\n")
+	if got != wantNormalized {
+		t.Fatalf("output does not match %s:\ngot:\n%s\nwant:\n%s", goldenPath, got, wantNormalized)
 	}
 }
 
@@ -398,6 +563,96 @@ func TestRunStatus_JSONOutputShape(t *testing.T) {
 	if !ok || len(repos) != 1 {
 		t.Fatalf("repos field missing or not an array of length 1: %v", decoded["repos"])
 	}
+}
+
+// TestRunStatus_JSONOutcomeGolden exercises status's mirrored Outcome and
+// DurationMS fields against a golden file, using a repo with remote drift so
+// Remotes.Updated is populated too.
+func TestRunStatus_JSONOutcomeGolden(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	repoPath := filepath.Join(groupPath, "example-project")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runFixture(t, repoPath, "init", "-b", "main")
+	runFixture(t, repoPath, "remote", "add", "origin", "https://example.com/octocat/stale.git")
+	configPath := writeConfig(t, groupPath, fileURL(origin))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "-config", configPath, "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 for remote drift; stderr: %s", code, stderr.String())
+	}
+
+	var report status.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+	if len(report.Repos) != 1 {
+		t.Fatalf("len(report.Repos) = %d, want 1", len(report.Repos))
+	}
+	if report.Repos[0].Outcome != "success" {
+		t.Fatalf("report.Repos[0].Outcome = %q, want %q (drift with no sync error)", report.Repos[0].Outcome, "success")
+	}
+	if len(report.Repos[0].Remotes.Updated) == 0 {
+		t.Fatalf("report.Repos[0].Remotes.Updated = %+v, want the stale origin URL recorded", report.Repos[0].Remotes.Updated)
+	}
+	if report.DurationMS < 0 || report.Repos[0].DurationMS < 0 {
+		t.Fatalf("negative duration_ms: report=%d repo=%d", report.DurationMS, report.Repos[0].DurationMS)
+	}
+
+	report.Repos[0].DurationMS = 0
+	report.Repos[0].Path = "<placeholder-path>"
+	for i := range report.Repos[0].Remotes.Updated {
+		report.Repos[0].Remotes.Updated[i].URL = "<placeholder-repo-url>"
+	}
+	report.DurationMS = 0
+	assertGolden(t, "testdata/status_json.golden", report)
+}
+
+// TestRunStatus_JSONOutcomeFailureGolden exercises status's mirrored
+// Outcome for the "failure" value (a repo status can't even plan for,
+// because it has no declared origin and no local checkout), proving the
+// mirror isn't hardcoded to "success" — the only value the other status
+// golden test exercises.
+func TestRunStatus_JSONOutcomeFailureGolden(t *testing.T) {
+	groupPath := t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	contents := "[[groups]]\n" +
+		"name = \"work\"\n" +
+		"path = \"" + filepath.ToSlash(groupPath) + "\"\n\n" +
+		"  [[groups.repos]]\n" +
+		"  name = \"no-origin\"\n"
+	if err := os.WriteFile(configPath, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "-config", configPath, "--json"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 for an errored repo; stderr: %s", code, stderr.String())
+	}
+
+	var report status.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+	if len(report.Repos) != 1 {
+		t.Fatalf("len(report.Repos) = %d, want 1", len(report.Repos))
+	}
+	if report.Repos[0].Outcome != "failure" {
+		t.Fatalf("report.Repos[0].Outcome = %q, want %q", report.Repos[0].Outcome, "failure")
+	}
+	if report.Repos[0].Error == "" {
+		t.Fatal("report.Repos[0].Error is empty, want the no-origin error")
+	}
+
+	report.Repos[0].DurationMS = 0
+	report.Repos[0].Path = "<placeholder-path>"
+	report.Repos[0].Error = "<placeholder-error>"
+	report.DurationMS = 0
+	assertGolden(t, "testdata/status_json_failure.golden", report)
 }
 
 func TestRunUnknownCommandIsAnError(t *testing.T) {

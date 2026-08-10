@@ -103,6 +103,47 @@ func TestFromSyncReport_ErrorMeansDriftedAndCountsErrors(t *testing.T) {
 	}
 }
 
+// TestFromSyncReport_MirrorsOutcomeAndDurationMS proves status carries sync's
+// derived Outcome and measured DurationMS through unchanged, rather than
+// recomputing or dropping them.
+func TestFromSyncReport_MirrorsOutcomeAndDurationMS(t *testing.T) {
+	sr := sync.Report{
+		DurationMS: 42,
+		Repos: []sync.RepoResult{
+			{Name: "example-project", Outcome: "success", DurationMS: 7},
+		},
+	}
+
+	got := FromSyncReport(sr)
+
+	if got.DurationMS != 42 {
+		t.Fatalf("got.DurationMS = %d, want 42", got.DurationMS)
+	}
+	if got.Repos[0].Outcome != "success" {
+		t.Fatalf("got.Repos[0].Outcome = %q, want %q", got.Repos[0].Outcome, "success")
+	}
+	if got.Repos[0].DurationMS != 7 {
+		t.Fatalf("got.Repos[0].DurationMS = %d, want 7", got.Repos[0].DurationMS)
+	}
+}
+
+// TestFromSyncReport_MirrorsNonSuccessOutcome proves the Outcome mirror
+// isn't hardcoded to "success" — it must carry through "failure" (and, by
+// the same code path, "partial") exactly as sync.Run computed it.
+func TestFromSyncReport_MirrorsNonSuccessOutcome(t *testing.T) {
+	sr := sync.Report{
+		Repos: []sync.RepoResult{
+			{Name: "no-origin", Outcome: "failure", Error: "sync: boom"},
+		},
+	}
+
+	got := FromSyncReport(sr)
+
+	if got.Repos[0].Outcome != "failure" {
+		t.Fatalf("got.Repos[0].Outcome = %q, want %q", got.Repos[0].Outcome, "failure")
+	}
+}
+
 // TestFromSyncReport_JSONFieldTypes asserts field types, not just presence —
 // a status field silently marshaling as the wrong type would still pass a
 // key-only check.

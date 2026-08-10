@@ -315,6 +315,99 @@ func TestRun_AppliesConfiguredBranchPatternPerRemote(t *testing.T) {
 	}
 }
 
+// TestRun_OutcomeSuccessOnCleanSync proves a repo that syncs with no error
+// is classified "success".
+func TestRun_OutcomeSuccessOnCleanSync(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	cfg := oneRepoConfig(groupPath, "example-project",
+		map[string]config.RemoteConfig{"origin": {URL: fileURL(origin)}},
+		config.IdentityConfig{},
+	)
+	c := gitcli.NewClient()
+
+	report := Run(context.Background(), c, cfg, Options{})
+
+	rr := report.Repos[0]
+	if rr.Error != "" {
+		t.Fatalf("rr.Error = %q, want none: %+v", rr.Error, rr)
+	}
+	if rr.Outcome != "success" {
+		t.Fatalf("rr.Outcome = %q, want %q", rr.Outcome, "success")
+	}
+}
+
+// TestRun_OutcomeFailureWhenNothingAccomplished proves a repo that errors
+// before recording any activity is classified "failure", not "partial".
+func TestRun_OutcomeFailureWhenNothingAccomplished(t *testing.T) {
+	groupPath := t.TempDir()
+	// No origin declared and no local checkout exists: syncRepo fails
+	// before Cloned, Remotes, Identity or Fetches are ever touched.
+	cfg := oneRepoConfig(groupPath, "no-origin", map[string]config.RemoteConfig{}, config.IdentityConfig{})
+	c := gitcli.NewClient()
+
+	report := Run(context.Background(), c, cfg, Options{})
+
+	rr := report.Repos[0]
+	if rr.Error == "" {
+		t.Fatal("rr.Error is empty, want an error for a repo with no origin and no checkout")
+	}
+	if rr.Outcome != "failure" {
+		t.Fatalf("rr.Outcome = %q, want %q for an error with no recorded activity", rr.Outcome, "failure")
+	}
+}
+
+// TestRun_OutcomePartialWhenErrorAfterActivity proves a repo that records
+// some activity (here, a remote URL update) before later failing is
+// classified "partial", not "failure".
+func TestRun_OutcomePartialWhenErrorAfterActivity(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	path := preexistingRepo(t, groupPath, "example-project", fileURL(origin))
+	// Declaring a different origin URL forces ReconcileRemotes to update it
+	// (recorded activity) before the subsequent fetch against that
+	// now-broken URL fails.
+	cfg := oneRepoConfig(groupPath, "example-project",
+		map[string]config.RemoteConfig{"origin": {URL: "https://127.0.0.1:1/does-not-exist.git"}},
+		config.IdentityConfig{},
+	)
+	c := gitcli.NewClient()
+
+	report := Run(context.Background(), c, cfg, Options{})
+
+	rr := report.Repos[0]
+	if rr.Error == "" {
+		t.Fatalf("rr.Error is empty, want a fetch error against an unreachable remote (path %q)", path)
+	}
+	if len(rr.Remotes.Updated) == 0 {
+		t.Fatalf("rr.Remotes.Updated = %+v, want the origin URL update recorded before the fetch failure", rr.Remotes.Updated)
+	}
+	if rr.Outcome != "partial" {
+		t.Fatalf("rr.Outcome = %q, want %q for an error recorded after activity", rr.Outcome, "partial")
+	}
+}
+
+// TestRun_DurationMSPositiveOnRealRun proves DurationMS is measured, not
+// just present, on both the per-repo result and the overall report.
+func TestRun_DurationMSPositiveOnRealRun(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	cfg := oneRepoConfig(groupPath, "example-project",
+		map[string]config.RemoteConfig{"origin": {URL: fileURL(origin)}},
+		config.IdentityConfig{},
+	)
+	c := gitcli.NewClient()
+
+	report := Run(context.Background(), c, cfg, Options{})
+
+	if report.DurationMS <= 0 {
+		t.Fatalf("report.DurationMS = %d, want > 0", report.DurationMS)
+	}
+	if report.Repos[0].DurationMS <= 0 {
+		t.Fatalf("report.Repos[0].DurationMS = %d, want > 0", report.Repos[0].DurationMS)
+	}
+}
+
 func TestRun_MissingOriginOnUnclonedRepoIsReportedAsErrorAndOthersStillRun(t *testing.T) {
 	origin := initBareRepo(t)
 	groupRoot := t.TempDir()

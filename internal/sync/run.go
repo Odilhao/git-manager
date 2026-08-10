@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/Odilhao/git-manager/internal/config"
 )
@@ -41,6 +42,8 @@ type FetchResult struct {
 // sync) one repo. Error is set, and every other field left at its zero
 // value, when the repo could not be synced at all (e.g. no origin declared
 // for a checkout that doesn't exist yet).
+//
+// JSON shape is additive/forward-compatible; see docs/json-schema.md.
 type RepoResult struct {
 	Name     string         `json:"name"`
 	Path     string         `json:"path"`
@@ -48,16 +51,30 @@ type RepoResult struct {
 	Remotes  RemoteReport   `json:"remotes"`
 	Identity IdentityReport `json:"identity"`
 	Fetches  []FetchResult  `json:"fetches,omitempty"`
-	Error    string         `json:"error,omitempty"`
+	// Outcome is derived from Error and the activity fields above, never
+	// set independently — "success" (no error), "partial" (error set but
+	// some activity was already recorded) or "failure" (error set, nothing
+	// accomplished).
+	Outcome string `json:"outcome"`
+	// DurationMS is the wall-clock time syncRepo spent on this repo, in
+	// milliseconds.
+	DurationMS int64  `json:"duration_ms"`
+	Error      string `json:"error,omitempty"`
 }
 
 // Report is Run's complete result: one RepoResult per repo declared in the
 // config, in declaration order.
+//
+// JSON shape is additive/forward-compatible; see docs/json-schema.md.
 type Report struct {
 	Repos      []RepoResult `json:"repos"`
 	DryRun     bool         `json:"dry_run"`
 	Overwrite  bool         `json:"overwrite"`
 	ErrorCount int          `json:"error_count"`
+	// DurationMS is the wall-clock time Run spent overall, in milliseconds —
+	// not a sum of the per-repo durations, so it stays correct if Run ever
+	// syncs repos concurrently.
+	DurationMS int64 `json:"duration_ms"`
 }
 
 // Run syncs every repo declared in cfg: resolves its local path, clones it
@@ -65,6 +82,7 @@ type Report struct {
 // and fetches from each declared remote — in that order. One repo's error is
 // recorded on its RepoResult rather than aborting the rest.
 func Run(ctx context.Context, real Client, cfg *config.Config, opts Options) Report {
+	start := time.Now()
 	resolved, _ := cfg.Resolve() // Resolve never actually returns a non-nil error today.
 
 	report := Report{DryRun: opts.DryRun, Overwrite: opts.Overwrite}
@@ -81,11 +99,17 @@ func Run(ctx context.Context, real Client, cfg *config.Config, opts Options) Rep
 			report.Repos = append(report.Repos, result)
 		}
 	}
+	report.DurationMS = time.Since(start).Milliseconds()
 	return report
 }
 
-func syncRepo(ctx context.Context, real Client, groupPath, repoName string, rr config.ResolvedRepo, opts Options) RepoResult {
-	result := RepoResult{Name: repoName}
+func syncRepo(ctx context.Context, real Client, groupPath, repoName string, rr config.ResolvedRepo, opts Options) (result RepoResult) {
+	start := time.Now()
+	result = RepoResult{Name: repoName}
+	defer func() {
+		result.DurationMS = time.Since(start).Milliseconds()
+		result.Outcome = computeOutcome(result)
+	}()
 
 	path, err := ResolveRepoPath(groupPath, repoName)
 	if err != nil {
@@ -166,6 +190,20 @@ func syncRepo(ctx context.Context, real Client, groupPath, repoName string, rr c
 	}
 
 	return result
+}
+
+// computeOutcome derives a RepoResult's Outcome from Error and the activity
+// already recorded on it — never an independently-set field, so it can't
+// drift from what the result actually says happened.
+func computeOutcome(r RepoResult) string {
+	if r.Error == "" {
+		return "success"
+	}
+	if r.Cloned || len(r.Remotes.Added) > 0 || len(r.Remotes.Updated) > 0 ||
+		len(r.Identity.Written) > 0 || len(r.Fetches) > 0 {
+		return "partial"
+	}
+	return "failure"
 }
 
 func pathExists(path string) bool {

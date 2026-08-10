@@ -139,14 +139,14 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 func printStatusReport(w io.Writer, report status.Report) {
 	for _, r := range report.Repos {
 		if r.Error != "" {
-			fmt.Fprintf(w, "FAIL %s: %s\n", r.Name, r.Error)
+			fmt.Fprintf(w, "FAIL %s: %s [%s, %dms]\n", r.Name, r.Error, r.Outcome, r.DurationMS)
 			continue
 		}
 		if !r.Drifted {
-			fmt.Fprintf(w, "in sync   %s (%s)\n", r.Name, r.Path)
+			fmt.Fprintf(w, "in sync   %s (%s) [%s, %dms]\n", r.Name, r.Path, r.Outcome, r.DurationMS)
 			continue
 		}
-		fmt.Fprintf(w, "drift     %s (%s)\n", r.Name, r.Path)
+		fmt.Fprintf(w, "drift     %s (%s) [%s, %dms]\n", r.Name, r.Path, r.Outcome, r.DurationMS)
 		if r.Cloned {
 			fmt.Fprintln(w, "       not cloned")
 		}
@@ -173,10 +173,10 @@ func printReport(w io.Writer, report sync.Report) {
 	}
 	for _, r := range report.Repos {
 		if r.Error != "" {
-			fmt.Fprintf(w, "FAIL %s: %s\n", r.Name, r.Error)
+			fmt.Fprintf(w, "FAIL %s: %s [%s, %dms]\n", r.Name, r.Error, r.Outcome, r.DurationMS)
 			continue
 		}
-		fmt.Fprintf(w, "OK   %s (%s) [%s]\n", r.Name, r.Path, verb)
+		fmt.Fprintf(w, "OK   %s (%s) [%s, %s, %dms]\n", r.Name, r.Path, verb, r.Outcome, r.DurationMS)
 		if r.Cloned {
 			fmt.Fprintln(w, "       cloned")
 		}

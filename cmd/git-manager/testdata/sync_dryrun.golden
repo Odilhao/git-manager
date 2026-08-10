@@ -27,10 +27,13 @@
           }
         }
       ],
+      "outcome": "success",
+      "duration_ms": 0,
       "error": ""
     }
   ],
   "dry_run": true,
   "overwrite": false,
-  "error_count": 0
+  "error_count": 0,
+  "duration_ms": 0
 }

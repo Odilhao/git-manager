@@ -31,6 +31,8 @@ type IdentityDrift struct {
 }
 
 // RepoResult is one repo's drift report.
+//
+// JSON shape is additive/forward-compatible; see docs/json-schema.md.
 type RepoResult struct {
 	Name     string        `json:"name"`
 	Path     string        `json:"path"`
@@ -38,15 +40,25 @@ type RepoResult struct {
 	Cloned   bool          `json:"cloned"`
 	Remotes  RemoteDrift   `json:"remotes"`
 	Identity IdentityDrift `json:"identity"`
-	Error    string        `json:"error,omitempty"`
+	// Outcome mirrors sync.RepoResult.Outcome unchanged — status performs no
+	// classification of its own.
+	Outcome string `json:"outcome"`
+	// DurationMS mirrors sync.RepoResult.DurationMS unchanged.
+	DurationMS int64  `json:"duration_ms"`
+	Error      string `json:"error,omitempty"`
 }
 
 // Report is status's complete result: one RepoResult per repo declared in
 // the config, in the same order sync.Report used.
+//
+// JSON shape is additive/forward-compatible; see docs/json-schema.md.
 type Report struct {
 	Repos      []RepoResult `json:"repos"`
 	Drifted    bool         `json:"drifted"`
 	ErrorCount int          `json:"error_count"`
+	// DurationMS mirrors sync.Report.DurationMS unchanged — status runs the
+	// same sync.Run(..., DryRun: true) call sync itself times.
+	DurationMS int64 `json:"duration_ms"`
 }
 
 // FromSyncReport reshapes a sync.Report produced by sync.Run(..., DryRun:
@@ -55,7 +67,7 @@ type Report struct {
 // compute exactly this drift as a side effect of planning; this just renames
 // "what would be applied" as "what has drifted".
 func FromSyncReport(sr sync.Report) Report {
-	report := Report{ErrorCount: sr.ErrorCount}
+	report := Report{ErrorCount: sr.ErrorCount, DurationMS: sr.DurationMS}
 	for _, rr := range sr.Repos {
 		repo := repoResultFrom(rr)
 		if repo.Drifted {
@@ -68,12 +80,14 @@ func FromSyncReport(sr sync.Report) Report {
 
 func repoResultFrom(rr sync.RepoResult) RepoResult {
 	repo := RepoResult{
-		Name:     rr.Name,
-		Path:     rr.Path,
-		Cloned:   rr.Cloned,
-		Remotes:  remoteDriftFrom(rr.Remotes),
-		Identity: identityDriftFrom(rr.Identity),
-		Error:    rr.Error,
+		Name:       rr.Name,
+		Path:       rr.Path,
+		Cloned:     rr.Cloned,
+		Remotes:    remoteDriftFrom(rr.Remotes),
+		Identity:   identityDriftFrom(rr.Identity),
+		Outcome:    rr.Outcome,
+		DurationMS: rr.DurationMS,
+		Error:      rr.Error,
 	}
 	repo.Drifted = rr.Cloned ||
 		len(repo.Remotes.Added) > 0 || len(repo.Remotes.Updated) > 0 || len(repo.Remotes.Removed) > 0 ||
