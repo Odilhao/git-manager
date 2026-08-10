@@ -1,0 +1,34 @@
+# See the documentation for more information:
+# https://packit.dev/docs/configuration/
+
+specfile_path: git-manager.spec
+
+# add or remove files that should be synced
+files_to_sync:
+  - git-manager.spec
+  - .packit.yml
+
+# name in upstream package repository or registry (e.g. in PyPI)
+upstream_package_name: git-manager
+# downstream (Fedora) RPM package name
+downstream_package_name: git-manager
+
+actions:
+  post-upstream-clone:
+    - "wget https://raw.githubusercontent.com/Odilhao/git-manager/refs/heads/main/.rpm/git-manager.spec -O git-manager.spec"
+    - "wget https://raw.githubusercontent.com/Odilhao/git-manager/refs/heads/main/.rpm/git-manager.spec -O go-vendor-tools.toml"
+    - git submodule update --init
+  create-archive: 
+    - make dist
+    - bash -c 'ls -1t foremanctl-*.tar.gz | head -n1'
+
+jobs:
+  - job: copr_build
+    trigger: pull_request
+    targets:
+      - fedora-44
+
+srpm_build_deps:
+  - golang
+  - make
+  - wget
