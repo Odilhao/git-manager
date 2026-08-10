@@ -1,0 +1,78 @@
+#compdef git-manager
+
+# Zsh completion for git-manager
+# Install by copying this file to /usr/share/zsh/site-functions/ or
+# add the directory containing it to $fpath in your ~/.zshrc:
+#   fpath=(/path/to/completions/zsh $fpath)
+
+_git_manager() {
+	local context state line cmd
+	typeset -A opt_args
+
+	_arguments -C \
+		'(: -)--help[show help message]' \
+		'(: -)--version[show version]' \
+		'1: :->cmd' \
+		'*:: :->args'
+
+	case $state in
+		cmd)
+			local -a commands
+			commands=(
+				'sync:synchronize repos with configured state'
+				'status:report repo status without changes'
+				'add:scaffold a config entry from existing checkout'
+				'install:install scheduler (systemd/launchd)'
+				'uninstall:uninstall scheduler (systemd/launchd)'
+			)
+			_describe -t commands 'subcommand' commands
+			;;
+		args)
+			case $line[1] in
+				sync)
+					_arguments \
+						'--config=[path to config file (required)]:config file:_files' \
+						'--dry-run[report changes without applying]' \
+						'--json[output as JSON]' \
+						'--parallel=[number of repos to sync in parallel]:number' \
+						'--overwrite[remove undeclared remotes]' \
+						'--prune[remove undeclared remotes]' \
+						'--help[show help message]' \
+						'--version[show version]'
+					;;
+				status)
+					_arguments \
+						'--config=[path to config file (required)]:config file:_files' \
+						'--json[output as JSON]' \
+						'--parallel=[number of repos to check in parallel]:number' \
+						'--help[show help message]' \
+						'--version[show version]'
+					;;
+				add)
+					_arguments \
+						'--config=[path to config file (required)]:config file:_files' \
+						'--group=[group name (required)]:group' \
+						'--name=[repo name (required)]:name' \
+						'--dry-run[print generated entry without writing]' \
+						'--help[show help message]' \
+						'--version[show version]' \
+						'*:repository path:_files -/'
+					;;
+				install)
+					_arguments \
+						'--dry-run[report changes without applying]' \
+						'--help[show help message]' \
+						'--version[show version]'
+					;;
+				uninstall)
+					_arguments \
+						'--dry-run[report changes without applying]' \
+						'--help[show help message]' \
+						'--version[show version]'
+					;;
+			esac
+			;;
+	esac
+}
+
+_git_manager "$@"
