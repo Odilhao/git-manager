@@ -36,6 +36,9 @@ done
 %install
 install -m 0755 -vd %{buildroot}%{_bindir}
 install -m 0755 -vp _build/bin/git-manager %{buildroot}%{_bindir}/
+install -D -m 0644 templates/completions/bash/git-manager %{buildroot}%{_datadir}/bash-completion/completions/git-manager
+install -D -m 0644 templates/completions/zsh/_git-manager %{buildroot}%{_datadir}/zsh/site-functions/_git-manager
+install -D -m 0644 templates/completions/fish/git-manager.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/git-manager.fish
 
 %check
 %if %{with check}
@@ -48,6 +51,9 @@ go test -v ./...
 %license LICENSE
 %doc docs templates/README.md templates/completions/README.md
 %{_bindir}/git-manager
+%{_datadir}/bash-completion/completions/git-manager
+%{_datadir}/zsh/site-functions/_git-manager
+%{_datadir}/fish/vendor_completions.d/git-manager.fish
 
 
 %changelog
