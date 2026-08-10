@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]*.[0-9]*.[0-9]*'
+
+jobs:
+  release-build:
+    name: Build and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          go-version: '1.26'
+
+      - name: gofmt check
+        run: test -z "$(gofmt -l .)"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -race -count=1
+
+      - name: Build matrix
+        run: |
+          mkdir -p dist
+
+          # Build for linux/amd64
+          GOOS=linux GOARCH=amd64 make build
+          mv git-manager git-manager-${{ github.ref_name }}-linux-amd64
+          tar -czf dist/git-manager-${{ github.ref_name }}-linux-amd64.tar.gz \
+            -C . git-manager-${{ github.ref_name }}-linux-amd64 LICENSE
+          sha256sum git-manager-${{ github.ref_name }}-linux-amd64 > git-manager-${{ github.ref_name }}-linux-amd64.sha256
+          sha256sum dist/git-manager-${{ github.ref_name }}-linux-amd64.tar.gz > dist/git-manager-${{ github.ref_name }}-linux-amd64.tar.gz.sha256
+          cp git-manager-${{ github.ref_name }}-linux-amd64 dist/
+          cp git-manager-${{ github.ref_name }}-linux-amd64.sha256 dist/
+
+          # Build for linux/arm64
+          GOOS=linux GOARCH=arm64 make build
+          mv git-manager git-manager-${{ github.ref_name }}-linux-arm64
+          tar -czf dist/git-manager-${{ github.ref_name }}-linux-arm64.tar.gz \
+            -C . git-manager-${{ github.ref_name }}-linux-arm64 LICENSE
+          sha256sum git-manager-${{ github.ref_name }}-linux-arm64 > git-manager-${{ github.ref_name }}-linux-arm64.sha256
+          sha256sum dist/git-manager-${{ github.ref_name }}-linux-arm64.tar.gz > dist/git-manager-${{ github.ref_name }}-linux-arm64.tar.gz.sha256
+          cp git-manager-${{ github.ref_name }}-linux-arm64 dist/
+          cp git-manager-${{ github.ref_name }}-linux-arm64.sha256 dist/
+
+          # Build for darwin/amd64
+          GOOS=darwin GOARCH=amd64 make build
+          mv git-manager git-manager-${{ github.ref_name }}-darwin-amd64
+          tar -czf dist/git-manager-${{ github.ref_name }}-darwin-amd64.tar.gz \
+            -C . git-manager-${{ github.ref_name }}-darwin-amd64 LICENSE
+          sha256sum git-manager-${{ github.ref_name }}-darwin-amd64 > git-manager-${{ github.ref_name }}-darwin-amd64.sha256
+          sha256sum dist/git-manager-${{ github.ref_name }}-darwin-amd64.tar.gz > dist/git-manager-${{ github.ref_name }}-darwin-amd64.tar.gz.sha256
+          cp git-manager-${{ github.ref_name }}-darwin-amd64 dist/
+          cp git-manager-${{ github.ref_name }}-darwin-amd64.sha256 dist/
+
+          # Build for darwin/arm64
+          GOOS=darwin GOARCH=arm64 make build
+          mv git-manager git-manager-${{ github.ref_name }}-darwin-arm64
+          tar -czf dist/git-manager-${{ github.ref_name }}-darwin-arm64.tar.gz \
+            -C . git-manager-${{ github.ref_name }}-darwin-arm64 LICENSE
+          sha256sum git-manager-${{ github.ref_name }}-darwin-arm64 > git-manager-${{ github.ref_name }}-darwin-arm64.sha256
+          sha256sum dist/git-manager-${{ github.ref_name }}-darwin-arm64.tar.gz > dist/git-manager-${{ github.ref_name }}-darwin-arm64.tar.gz.sha256
+          cp git-manager-${{ github.ref_name }}-darwin-arm64 dist/
+          cp git-manager-${{ github.ref_name }}-darwin-arm64.sha256 dist/
+
+      - name: Upload to GitHub release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          files: |
+            dist/git-manager-*
+            dist/git-manager-*.sha256
+            dist/git-manager-*.tar.gz
+            dist/git-manager-*.tar.gz.sha256
