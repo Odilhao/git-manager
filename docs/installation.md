@@ -92,7 +92,7 @@ Or confirm it runs at all by invoking it with no arguments:
 git-manager
 ```
 
-You should see `usage: git-manager <command> [flags]` on stderr and a nonzero exit — that confirms the binary works. The available commands are `sync`, `status`, `add`, `install`, and `uninstall` (see the [usage guide](usage.md) for the full reference).
+You should see a command summary on stdout and a zero exit — that confirms the binary works. The available commands are `sync`, `status`, `add`, `install`, and `uninstall` (see the [usage guide](usage.md) for the full reference).
 
 If `git-manager` is not in your `$PATH`, verify it works by using the full path to the binary:
 
