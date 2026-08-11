@@ -1,0 +1,10 @@
+[[groups]]
+name = "example-org"
+path = "~/code/example-org"
+repos_dir = "repos.d"
+
+  [[groups.repos]]
+  name = "service-a"
+
+    [groups.repos.remotes.origin]
+    url = "git@github.com:example-org/service-a.git"

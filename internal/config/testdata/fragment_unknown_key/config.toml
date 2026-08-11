@@ -1,0 +1,4 @@
+[[groups]]
+name = "example"
+path = "~/code/example"
+repos_dir = "repos.d"

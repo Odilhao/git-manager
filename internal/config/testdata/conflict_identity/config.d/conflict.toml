@@ -1,0 +1,9 @@
+[[groups]]
+name = "work"
+user_email = "other@example.com"
+
+  [[groups.repos]]
+  name = "project-b"
+
+    [groups.repos.remotes.origin]
+    url = "git@github.com:example-org/project-b.git"

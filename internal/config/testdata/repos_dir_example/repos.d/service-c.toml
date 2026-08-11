@@ -1,0 +1,5 @@
+[[repos]]
+name = "service-c"
+
+  [repos.remotes.origin]
+  url = "git@github.com:example-org/service-c.git"

@@ -1,0 +1,9 @@
+[[groups]]
+name = "personal"
+path = "~/code/personal"
+
+  [[groups.repos]]
+  name = "hobby-project"
+
+    [groups.repos.remotes.origin]
+    url = "https://example.com/octocat/hobby-project.git"

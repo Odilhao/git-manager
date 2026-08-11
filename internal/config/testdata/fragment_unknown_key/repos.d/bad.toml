@@ -1,0 +1,6 @@
+[[repos]]
+name = "service-a"
+unknown_field = "bad"
+
+  [repos.remotes.origin]
+  url = "git@github.com:example-org/service-a.git"
