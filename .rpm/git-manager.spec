@@ -5,7 +5,7 @@
 
 
 Name:           golang-github-odilhao-git-manager
-Version:        0.0.3
+Version:        0.0.4
 Release:        %autorelease
 Summary:        None
 
