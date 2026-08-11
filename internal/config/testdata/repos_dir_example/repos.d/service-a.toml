@@ -1,0 +1,11 @@
+[[repos]]
+name = "service-a"
+
+  [repos.remotes.origin]
+  url = "git@github.com:example-org/service-a.git"
+
+[[repos]]
+name = "service-b"
+
+  [repos.remotes.origin]
+  url = "git@github.com:example-org/service-b.git"

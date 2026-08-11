@@ -67,6 +67,112 @@ All identity/signing fields are optional. A field that is not declared at any le
 
 The `branches` field supports glob patterns (e.g., `release/*`) or regexes (e.g., `^(main\|develop)$`). When set, only branches matching the pattern are fetched.
 
+### Group field: `repos_dir` (optional)
+
+| Field | Type | Purpose |
+|---|---|---|
+| `repos_dir` | string | Directory path containing repo fragment files. Each `.toml` file in this directory can declare additional `[[repos]]` blocks for this group. |
+
+The `repos_dir` field lets you split a group's repo list across multiple files. This is useful for large groups (100+ repos) where keeping everything in a single config file becomes unwieldy.
+
+**Example:**
+
+Main config file:
+
+```toml
+[[groups]]
+name = "example-org"
+path = "~/code/example-org"
+repos_dir = "groups.d/example-org"
+
+  [[groups.repos]]
+  name = "hand-declared-repo"
+
+    [groups.repos.remotes.origin]
+    url = "git@github.com:example-org/hand-declared-repo.git"
+```
+
+Fragment file `groups.d/example-org/backend.toml`:
+
+```toml
+[[repos]]
+name = "service-a"
+
+  [repos.remotes.origin]
+  url = "git@github.com:example-org/service-a.git"
+
+[[repos]]
+name = "service-b"
+
+  [repos.remotes.origin]
+  url = "git@github.com:example-org/service-b.git"
+```
+
+Repos from `repos_dir` are loaded in lexical order and merged with inline `[[groups.repos]]` declarations. All repo names within a group must be unique — duplicate names across any source (inline, `repos_dir`, or `config.d/`) are rejected with a load-time error.
+
+## Drop-in config.d/ directory
+
+If a `config.d/` directory exists alongside the main config file, every `.toml` file inside it is automatically loaded (non-recursive, sorted lexically). Each fragment can declare additional `[[groups]]` blocks:
+
+- **New groups**: A group declared only in a `config.d/` fragment becomes part of the overall config.
+- **Additional repos for existing groups**: A group name already declared in the main config can appear again in a `config.d/` fragment to add more repos via `[[groups.repos]]`.
+
+**Example:**
+
+Main config file `config.toml`:
+
+```toml
+[defaults]
+user_name = "Octocat"
+
+[[groups]]
+name = "work"
+path = "~/code/work"
+
+  [[groups.repos]]
+  name = "main-project"
+
+    [groups.repos.remotes.origin]
+    url = "git@github.com:example-org/main-project.git"
+```
+
+Fragment file `config.d/work-extra.toml`:
+
+```toml
+[[groups]]
+name = "work"
+
+  [[groups.repos]]
+  name = "extra-project"
+
+    [groups.repos.remotes.origin]
+    url = "git@github.com:example-org/extra-project.git"
+```
+
+Fragment file `config.d/personal.toml`:
+
+```toml
+[[groups]]
+name = "personal"
+path = "~/code/personal"
+
+  [[groups.repos]]
+  name = "hobby-project"
+
+    [groups.repos.remotes.origin]
+    url = "https://example.com/octocat/hobby-project.git"
+```
+
+After loading, the config has:
+- **work group** with two repos: `main-project` (from main config) and `extra-project` (from `config.d/work-extra.toml`)
+- **personal group** with one repo: `hobby-project` (from `config.d/personal.toml`)
+
+**Validation rules:**
+
+- Unknown keys in fragment files are rejected just like the main config.
+- A group appearing in both the main config and a `config.d/` fragment cannot re-declare the group's `path` or identity/signing fields (only additional repos are allowed). Any re-declaration, even to the same value, is a load-time error.
+- Duplicate repo names within a group across any source are rejected with a load-time error.
+
 ## Identity/Signing resolution: narrowest-wins
 
 When `git-manager` applies config to a repo, it merges identity/signing setup across three levels:

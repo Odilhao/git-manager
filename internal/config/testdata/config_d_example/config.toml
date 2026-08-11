@@ -1,0 +1,13 @@
+[defaults]
+user_name = "Octocat"
+user_email = "octocat@example.com"
+
+[[groups]]
+name = "work"
+path = "~/code/work"
+
+  [[groups.repos]]
+  name = "main-project"
+
+    [groups.repos.remotes.origin]
+    url = "git@github.com:example-org/main-project.git"
