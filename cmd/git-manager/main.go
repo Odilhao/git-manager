@@ -9,12 +9,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync" // stdlib sync, not internal/sync
 
 	"github.com/Odilhao/git-manager/internal/config"
 	"github.com/Odilhao/git-manager/internal/gitcli"
 	"github.com/Odilhao/git-manager/internal/scheduler"
 	"github.com/Odilhao/git-manager/internal/status"
-	"github.com/Odilhao/git-manager/internal/sync"
+	synccli "github.com/Odilhao/git-manager/internal/sync"
 )
 
 func main() {
@@ -91,6 +92,8 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 	dryRun := fs.Bool("dry-run", false, "report what would change without applying it")
 	overwrite := fs.Bool("overwrite", false, "remove undeclared remotes during reconciliation (alias: --prune)")
 	prune := fs.Bool("prune", false, "remove undeclared remotes during reconciliation (alias: --overwrite)")
+	quiet := fs.Bool("q", false, "suppress live progress output (legacy quiet mode)")
+	quietLong := fs.Bool("quiet", false, "suppress live progress output")
 	jsonOut := fs.Bool("json", false, "report as JSON instead of human-readable text")
 	parallel := fs.Int("parallel", 0, "number of repos to sync in parallel (default 4; 0 means default)")
 	if helpRequested(args) {
@@ -114,8 +117,21 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	opts := sync.Options{DryRun: *dryRun, Overwrite: *overwrite || *prune, Concurrency: *parallel}
-	report := sync.Run(context.Background(), gitcli.NewClient(), cfg, opts)
+	opts := synccli.Options{DryRun: *dryRun, Overwrite: *overwrite || *prune, Concurrency: *parallel}
+
+	// Set progress callback: default shows progress on stderr, -q/--quiet suppresses,
+	// --json also suppresses (and outputs JSON only).
+	isQuiet := *quiet || *quietLong
+	if !isQuiet && !*jsonOut {
+		var mu sync.Mutex
+		opts.ProgressCallback = func(e synccli.RepoEvent) {
+			mu.Lock()
+			defer mu.Unlock()
+			fmt.Fprintf(stderr, "sync: %s (%s)\n", e.Name, e.Result.Outcome)
+		}
+	}
+
+	report := synccli.Run(context.Background(), gitcli.NewClient(), cfg, opts)
 
 	if *jsonOut {
 		enc := json.NewEncoder(stdout)
@@ -162,7 +178,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	syncReport := sync.Run(context.Background(), gitcli.NewClient(), cfg, sync.Options{DryRun: true, Concurrency: *parallel})
+	syncReport := synccli.Run(context.Background(), gitcli.NewClient(), cfg, synccli.Options{DryRun: true, Concurrency: *parallel})
 	report := status.FromSyncReport(syncReport)
 
 	if *jsonOut {
@@ -212,7 +228,7 @@ func printStatusReport(w io.Writer, report status.Report) {
 	fmt.Fprintf(w, "%d repo(s), %d error(s)\n", len(report.Repos), report.ErrorCount)
 }
 
-func printReport(w io.Writer, report sync.Report) {
+func printReport(w io.Writer, report synccli.Report) {
 	verb := "synced"
 	if report.DryRun {
 		verb = "would sync"

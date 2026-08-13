@@ -662,3 +662,59 @@ func TestRun_ZeroDeclaredReposReturnsNilReposNotEmpty(t *testing.T) {
 		t.Fatalf("report.DurationMS = %d, want >= 0", report.DurationMS)
 	}
 }
+
+// TestRun_ProgressCallbackFiredOnCompletion verifies that the ProgressCallback
+// is invoked once per repo upon completion, with the final RepoResult.
+func TestRun_ProgressCallbackFiredOnCompletion(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	cfg := oneRepoConfig(groupPath, "example-project",
+		map[string]config.RemoteConfig{"origin": {URL: fileURL(origin)}},
+		config.IdentityConfig{},
+	)
+	c := gitcli.NewClient()
+
+	var events []RepoEvent
+	opts := Options{
+		ProgressCallback: func(e RepoEvent) {
+			events = append(events, e)
+		},
+	}
+
+	report := Run(context.Background(), c, cfg, opts)
+
+	if report.ErrorCount != 0 {
+		t.Fatalf("report.ErrorCount = %d, want 0", report.ErrorCount)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Name != "example-project" {
+		t.Fatalf("events[0].Name = %q, want example-project", events[0].Name)
+	}
+	if events[0].Result.Outcome != "success" {
+		t.Fatalf("events[0].Result.Outcome = %q, want success", events[0].Result.Outcome)
+	}
+}
+
+// TestRun_NoProgressCallbackIsNilSafe verifies that Run operates correctly
+// when ProgressCallback is nil (the zero value).
+func TestRun_NoProgressCallbackIsNilSafe(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	cfg := oneRepoConfig(groupPath, "example-project",
+		map[string]config.RemoteConfig{"origin": {URL: fileURL(origin)}},
+		config.IdentityConfig{},
+	)
+	c := gitcli.NewClient()
+
+	// Zero-value Options has nil ProgressCallback; should not panic.
+	report := Run(context.Background(), c, cfg, Options{})
+
+	if report.ErrorCount != 0 {
+		t.Fatalf("report.ErrorCount = %d, want 0", report.ErrorCount)
+	}
+	if len(report.Repos) != 1 {
+		t.Fatalf("len(report.Repos) = %d, want 1", len(report.Repos))
+	}
+}
