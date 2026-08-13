@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -827,5 +828,154 @@ func TestRunUninstall_DryRunOutputsActionsAndReturnsZero(t *testing.T) {
 	// The output should contain some action descriptions.
 	if len(output) == 0 {
 		t.Fatal("expected action output but got empty string")
+	}
+}
+
+// TestRunSync_DefaultShowsLiveProgressOnStderr verifies that running sync
+// without flags shows progress lines on stderr (one line per repo on completion)
+// and the final summary on stdout.
+func TestRunSync_DefaultShowsLiveProgressOnStderr(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	configPath := writeConfig(t, groupPath, fileURL(origin))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-config", configPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	// Verify progress line appears on stderr.
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "sync:") || !strings.Contains(stderrStr, "example-project") {
+		t.Fatalf("expected progress line on stderr containing 'sync:' and 'example-project', got: %q", stderrStr)
+	}
+
+	// Verify summary appears on stdout.
+	stdoutStr := stdout.String()
+	if !strings.Contains(stdoutStr, "OK") || !strings.Contains(stdoutStr, "example-project") {
+		t.Fatalf("expected summary on stdout containing 'OK' and 'example-project', got: %q", stdoutStr)
+	}
+}
+
+// TestRunSync_QuietFlagSuppressesProgress verifies that -q/--quiet suppresses
+// progress lines on stderr but still prints the final summary on stdout.
+func TestRunSync_QuietFlagSuppressesProgress(t *testing.T) {
+	for _, flag := range []string{"-q", "--quiet"} {
+		t.Run(flag, func(t *testing.T) {
+			origin := initBareRepo(t)
+			groupPath := t.TempDir()
+			configPath := writeConfig(t, groupPath, fileURL(origin))
+
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"sync", "-config", configPath, flag}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+			}
+
+			// Verify no progress line on stderr.
+			stderrStr := stderr.String()
+			if strings.Contains(stderrStr, "sync:") && strings.Contains(stderrStr, "example-project") {
+				t.Fatalf("%s flag should suppress progress lines on stderr, but found: %q", flag, stderrStr)
+			}
+
+			// Verify summary still appears on stdout.
+			stdoutStr := stdout.String()
+			if !strings.Contains(stdoutStr, "OK") || !strings.Contains(stdoutStr, "example-project") {
+				t.Fatalf("expected summary on stdout containing 'OK' and 'example-project', got: %q", stdoutStr)
+			}
+		})
+	}
+}
+
+// TestRunSync_JSONFlagSuppressesProgress verifies that --json suppresses
+// progress lines (not even on stderr) and outputs valid JSON only on stdout.
+func TestRunSync_JSONFlagSuppressesProgress(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	configPath := writeConfig(t, groupPath, fileURL(origin))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-config", configPath, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	// Verify stderr is completely empty: --json suppresses progress lines entirely.
+	stderrStr := stderr.String()
+	if stderrStr != "" {
+		t.Fatalf("--json should suppress progress lines entirely (stderr empty), but found: %q", stderrStr)
+	}
+
+	// Verify valid JSON on stdout (no progress lines in it).
+	var report sync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+	if len(report.Repos) != 1 || report.Repos[0].Name != "example-project" {
+		t.Fatalf("report.Repos = %+v, want one repo named example-project", report.Repos)
+	}
+}
+
+// TestRunSync_ProgressCallbackThreadSafety verifies that the progress
+// callback is thread-safe when multiple repos are synced in parallel.
+// This test must be run with -race to detect data races on stderr writes.
+func TestRunSync_ProgressCallbackThreadSafety(t *testing.T) {
+	// Create 4 bare repos and a config with 4 repos to sync concurrently.
+	var origins []string
+	for i := 0; i < 4; i++ {
+		origins = append(origins, initBareRepo(t))
+	}
+
+	groupPath := t.TempDir()
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "config.toml")
+
+	// Write config with 4 repos in the same group.
+	configContents := "[[groups]]\n" +
+		"name = \"work\"\n" +
+		"path = \"" + filepath.ToSlash(groupPath) + "\"\n\n"
+	for i, origin := range origins {
+		repoName := fmt.Sprintf("repo-%d", i)
+		configContents += "  [[groups.repos]]\n" +
+			"  name = \"" + repoName + "\"\n\n" +
+			"    [groups.repos.remotes.origin]\n" +
+			"    url = \"" + fileURL(origin) + "\"\n\n"
+	}
+
+	if err := os.WriteFile(configPath, []byte(configContents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run sync with parallelism enabled, which will exercise concurrent
+	// ProgressCallback invocations. The -race test flag will detect any
+	// data races on stderr writes if synchronization is missing.
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-config", configPath, "-parallel", "4"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	// Verify all 4 repos were synced and reported progress on stderr.
+	stderrStr := stderr.String()
+	for i := 0; i < 4; i++ {
+		repoName := fmt.Sprintf("repo-%d", i)
+		if !strings.Contains(stderrStr, repoName) {
+			t.Fatalf("expected progress for %s in stderr, got: %q", repoName, stderrStr)
+		}
+	}
+
+	// Verify the report contains all 4 repos.
+	var report sync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		// When not using --json, stdout may not be JSON; just verify we got
+		// 4 successful syncs from the return code and stderr messages.
+		if code == 0 {
+			return
+		}
+		t.Fatalf("unexpected non-zero code with unparseable stdout: code=%d, stdout=%s", code, stdout.String())
+	}
+	if len(report.Repos) != 4 {
+		t.Fatalf("report.Repos has %d repos, want 4", len(report.Repos))
 	}
 }

@@ -21,6 +21,12 @@ type Client interface {
 	identityClient
 }
 
+// RepoEvent carries the completion event for a single repo's sync.
+type RepoEvent struct {
+	Name   string
+	Result RepoResult
+}
+
 // Options controls how Run treats every repo it syncs.
 type Options struct {
 	// DryRun reports what would change without running any git command that
@@ -33,6 +39,11 @@ type Options struct {
 	// Concurrency is the number of repos to sync in parallel. If 0 or negative,
 	// defaults to 4.
 	Concurrency int
+	// ProgressCallback, if non-nil, is invoked once per repo as it completes
+	// (after its sync work finishes). It must not block or mutate shared state
+	// beyond a simple format-and-print, as it is invoked concurrently from
+	// worker goroutines.
+	ProgressCallback func(RepoEvent)
 }
 
 // FetchResult pairs one declared remote with what fetching it did or, in
@@ -123,6 +134,7 @@ func Run(ctx context.Context, real Client, cfg *config.Config, opts Options) Rep
 		for _, r := range g.Repos {
 			idx := repoIdx // Capture for the goroutine.
 			rr := resolved[idx]
+			repoName := r.Name // Capture for the progress callback.
 			repoIdx++
 
 			wg.Add(1)
@@ -131,7 +143,11 @@ func Run(ctx context.Context, real Client, cfg *config.Config, opts Options) Rep
 				// Acquire a semaphore token; block if at capacity.
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }() // Release the token.
-				results[idx] = syncRepo(ctx, real, g.Path, r.Name, rr, opts)
+				result := syncRepo(ctx, real, g.Path, repoName, rr, opts)
+				results[idx] = result
+				if opts.ProgressCallback != nil {
+					opts.ProgressCallback(RepoEvent{Name: repoName, Result: result})
+				}
 			}()
 		}
 	}
