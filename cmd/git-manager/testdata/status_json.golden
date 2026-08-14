@@ -1,7 +1,9 @@
 {
+  "config": "",
   "repos": [
     {
       "name": "example-project",
+      "group": "work",
       "path": "<placeholder-path>",
       "drifted": true,
       "cloned": false,

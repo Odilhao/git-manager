@@ -35,6 +35,7 @@ type IdentityDrift struct {
 // JSON shape is additive/forward-compatible; see docs/json-schema.md.
 type RepoResult struct {
 	Name     string        `json:"name"`
+	Group    string        `json:"group,omitempty"`
 	Path     string        `json:"path"`
 	Drifted  bool          `json:"drifted"`
 	Cloned   bool          `json:"cloned"`
@@ -53,6 +54,7 @@ type RepoResult struct {
 //
 // JSON shape is additive/forward-compatible; see docs/json-schema.md.
 type Report struct {
+	Config     string       `json:"config"`
 	Repos      []RepoResult `json:"repos"`
 	Drifted    bool         `json:"drifted"`
 	ErrorCount int          `json:"error_count"`
@@ -67,7 +69,7 @@ type Report struct {
 // compute exactly this drift as a side effect of planning; this just renames
 // "what would be applied" as "what has drifted".
 func FromSyncReport(sr sync.Report) Report {
-	report := Report{ErrorCount: sr.ErrorCount, DurationMS: sr.DurationMS}
+	report := Report{Config: sr.Config, ErrorCount: sr.ErrorCount, DurationMS: sr.DurationMS}
 	for _, rr := range sr.Repos {
 		repo := repoResultFrom(rr)
 		if repo.Drifted {
@@ -81,6 +83,7 @@ func FromSyncReport(sr sync.Report) Report {
 func repoResultFrom(rr sync.RepoResult) RepoResult {
 	repo := RepoResult{
 		Name:       rr.Name,
+		Group:      rr.Group,
 		Path:       rr.Path,
 		Cloned:     rr.Cloned,
 		Remotes:    remoteDriftFrom(rr.Remotes),

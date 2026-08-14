@@ -718,3 +718,77 @@ func TestRun_NoProgressCallbackIsNilSafe(t *testing.T) {
 		t.Fatalf("len(report.Repos) = %d, want 1", len(report.Repos))
 	}
 }
+
+// TestRun_RepoResultCarriesGroupName verifies that RepoResult includes the
+// group name the repo belongs to, enabling traceability in reports.
+func TestRun_RepoResultCarriesGroupName(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	cfg := &config.Config{
+		Groups: []config.GroupConfig{
+			{
+				Name: "work",
+				Path: groupPath,
+				Repos: []config.RepoConfig{
+					{Name: "example-project", Remotes: map[string]config.RemoteConfig{"origin": {URL: fileURL(origin)}}},
+				},
+			},
+		},
+	}
+	c := gitcli.NewClient()
+
+	report := Run(context.Background(), c, cfg, Options{})
+
+	if len(report.Repos) != 1 {
+		t.Fatalf("len(report.Repos) = %d, want 1", len(report.Repos))
+	}
+	rr := report.Repos[0]
+	if rr.Group != "work" {
+		t.Fatalf("rr.Group = %q, want %q", rr.Group, "work")
+	}
+}
+
+// TestRun_BadSigningMethodErrorCarriesContext verifies that a bad
+// signing_method in the config produces an error that includes repo name,
+// path, and group context, making it traceable.
+func TestRun_BadSigningMethodErrorCarriesContext(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	badMethod := "invalid-method"
+	cfg := &config.Config{
+		Groups: []config.GroupConfig{
+			{
+				Name: "work",
+				Path: groupPath,
+				Repos: []config.RepoConfig{
+					{
+						Name:    "example-project",
+						Remotes: map[string]config.RemoteConfig{"origin": {URL: fileURL(origin)}},
+						IdentityConfig: config.IdentityConfig{
+							SigningMethod: &badMethod,
+						},
+					},
+				},
+			},
+		},
+	}
+	c := gitcli.NewClient()
+
+	report := Run(context.Background(), c, cfg, Options{})
+
+	if report.ErrorCount != 1 {
+		t.Fatalf("report.ErrorCount = %d, want 1 for a bad signing_method", report.ErrorCount)
+	}
+	rr := report.Repos[0]
+	if rr.Error == "" {
+		t.Fatal("rr.Error is empty, want an error for an invalid signing_method")
+	}
+	// Error should include repo name and group name for traceability
+	errStr := rr.Error
+	if !strings.Contains(errStr, "example-project") {
+		t.Fatalf("error missing repo name: %q", errStr)
+	}
+	if !strings.Contains(errStr, "work") {
+		t.Fatalf("error missing group name: %q", errStr)
+	}
+}
