@@ -1,7 +1,9 @@
 {
+  "config": "",
   "repos": [
     {
       "name": "no-origin",
+      "group": "work",
       "path": "<placeholder-path>",
       "drifted": true,
       "cloned": false,

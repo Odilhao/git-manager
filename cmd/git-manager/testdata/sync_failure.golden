@@ -1,7 +1,9 @@
 {
+  "config": "<placeholder-config>",
   "repos": [
     {
       "name": "no-origin",
+      "group": "work",
       "path": "<placeholder-path>",
       "cloned": false,
       "remotes": {

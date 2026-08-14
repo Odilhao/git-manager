@@ -24,6 +24,7 @@ type Client interface {
 // RepoEvent carries the completion event for a single repo's sync.
 type RepoEvent struct {
 	Name   string
+	Group  string
 	Result RepoResult
 }
 
@@ -44,6 +45,9 @@ type Options struct {
 	// beyond a simple format-and-print, as it is invoked concurrently from
 	// worker goroutines.
 	ProgressCallback func(RepoEvent)
+	// ConfigPath is the resolved path to the config file that drove this run.
+	// It is included in the report for traceability.
+	ConfigPath string
 }
 
 // FetchResult pairs one declared remote with what fetching it did or, in
@@ -61,6 +65,7 @@ type FetchResult struct {
 // JSON shape is additive/forward-compatible; see docs/json-schema.md.
 type RepoResult struct {
 	Name     string         `json:"name"`
+	Group    string         `json:"group,omitempty"`
 	Path     string         `json:"path"`
 	Cloned   bool           `json:"cloned"`
 	Remotes  RemoteReport   `json:"remotes"`
@@ -82,6 +87,7 @@ type RepoResult struct {
 //
 // JSON shape is additive/forward-compatible; see docs/json-schema.md.
 type Report struct {
+	Config     string       `json:"config"`
 	Repos      []RepoResult `json:"repos"`
 	DryRun     bool         `json:"dry_run"`
 	Overwrite  bool         `json:"overwrite"`
@@ -102,7 +108,7 @@ func Run(ctx context.Context, real Client, cfg *config.Config, opts Options) Rep
 	start := time.Now()
 	resolved, _ := cfg.Resolve() // Resolve never actually returns a non-nil error today.
 
-	report := Report{DryRun: opts.DryRun, Overwrite: opts.Overwrite}
+	report := Report{Config: opts.ConfigPath, DryRun: opts.DryRun, Overwrite: opts.Overwrite}
 
 	// Count total repos to pre-allocate results slice (no append races, deterministic order).
 	totalRepos := 0
@@ -131,6 +137,7 @@ func Run(ctx context.Context, real Client, cfg *config.Config, opts Options) Rep
 	// Launch goroutines for each repo, respecting the concurrency limit.
 	repoIdx := 0
 	for _, g := range cfg.Groups {
+		groupName := g.Name // Capture group name for the progress callback.
 		for _, r := range g.Repos {
 			idx := repoIdx // Capture for the goroutine.
 			rr := resolved[idx]
@@ -143,10 +150,10 @@ func Run(ctx context.Context, real Client, cfg *config.Config, opts Options) Rep
 				// Acquire a semaphore token; block if at capacity.
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }() // Release the token.
-				result := syncRepo(ctx, real, g.Path, repoName, rr, opts)
+				result := syncRepo(ctx, real, g.Path, repoName, groupName, rr, opts)
 				results[idx] = result
 				if opts.ProgressCallback != nil {
-					opts.ProgressCallback(RepoEvent{Name: repoName, Result: result})
+					opts.ProgressCallback(RepoEvent{Name: repoName, Group: groupName, Result: result})
 				}
 			}()
 		}
@@ -166,9 +173,9 @@ func Run(ctx context.Context, real Client, cfg *config.Config, opts Options) Rep
 	return report
 }
 
-func syncRepo(ctx context.Context, real Client, groupPath, repoName string, rr config.ResolvedRepo, opts Options) (result RepoResult) {
+func syncRepo(ctx context.Context, real Client, groupPath, repoName, groupName string, rr config.ResolvedRepo, opts Options) (result RepoResult) {
 	start := time.Now()
-	result = RepoResult{Name: repoName}
+	result = RepoResult{Name: repoName, Group: groupName}
 	defer func() {
 		result.DurationMS = time.Since(start).Milliseconds()
 		result.Outcome = computeOutcome(result)
@@ -235,7 +242,7 @@ func syncRepo(ctx context.Context, real Client, groupPath, repoName string, rr c
 	}
 	result.Remotes = remotesReport
 
-	identityReport, err := ApplyIdentity(ctx, client, path, rr.Identity)
+	identityReport, err := ApplyIdentity(ctx, client, path, repoName, groupName, rr.Identity)
 	if err != nil {
 		result.Error = err.Error()
 		return result

@@ -1,7 +1,9 @@
 {
+  "config": "",
   "repos": [
     {
       "name": "example-project",
+      "group": "work",
       "path": "<placeholder-group-path>/example-project",
       "cloned": true,
       "remotes": {

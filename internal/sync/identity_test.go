@@ -27,7 +27,7 @@ func TestApplyIdentity_UserNameAndEmail(t *testing.T) {
 		UserEmail: strPtr("octocat@example.com"),
 	}
 
-	report, err := ApplyIdentity(context.Background(), c, repo, identity)
+	report, err := ApplyIdentity(context.Background(), c, repo, "example-project", "work", identity)
 	if err != nil {
 		t.Fatalf("ApplyIdentity: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestApplyIdentity_SigningMethodGPG(t *testing.T) {
 	c := gitcli.NewClient()
 	identity := config.ResolvedIdentity{SigningMethod: strPtr("gpg")}
 
-	if _, err := ApplyIdentity(context.Background(), c, repo, identity); err != nil {
+	if _, err := ApplyIdentity(context.Background(), c, repo, "example-project", "work", identity); err != nil {
 		t.Fatalf("ApplyIdentity: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestApplyIdentity_SigningMethodSSH(t *testing.T) {
 	c := gitcli.NewClient()
 	identity := config.ResolvedIdentity{SigningMethod: strPtr("ssh")}
 
-	if _, err := ApplyIdentity(context.Background(), c, repo, identity); err != nil {
+	if _, err := ApplyIdentity(context.Background(), c, repo, "example-project", "work", identity); err != nil {
 		t.Fatalf("ApplyIdentity: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestApplyIdentity_SigningMethodNone(t *testing.T) {
 	c := gitcli.NewClient()
 	identity := config.ResolvedIdentity{SigningMethod: strPtr("none")}
 
-	if _, err := ApplyIdentity(context.Background(), c, repo, identity); err != nil {
+	if _, err := ApplyIdentity(context.Background(), c, repo, "example-project", "work", identity); err != nil {
 		t.Fatalf("ApplyIdentity: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestApplyIdentity_SigningKey(t *testing.T) {
 	c := gitcli.NewClient()
 	identity := config.ResolvedIdentity{SigningKey: strPtr("ABCDEF1234567890")}
 
-	if _, err := ApplyIdentity(context.Background(), c, repo, identity); err != nil {
+	if _, err := ApplyIdentity(context.Background(), c, repo, "example-project", "work", identity); err != nil {
 		t.Fatalf("ApplyIdentity: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestApplyIdentity_FullyNilWritesNothing(t *testing.T) {
 	repo := identityRepo(t)
 	c := gitcli.NewClient()
 
-	report, err := ApplyIdentity(context.Background(), c, repo, config.ResolvedIdentity{})
+	report, err := ApplyIdentity(context.Background(), c, repo, "example-project", "work", config.ResolvedIdentity{})
 	if err != nil {
 		t.Fatalf("ApplyIdentity: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestApplyIdentity_PartiallyNilWritesOnlySetFields(t *testing.T) {
 	c := gitcli.NewClient()
 	identity := config.ResolvedIdentity{UserEmail: strPtr("octocat@work.example.com")}
 
-	report, err := ApplyIdentity(context.Background(), c, repo, identity)
+	report, err := ApplyIdentity(context.Background(), c, repo, "example-project", "work", identity)
 	if err != nil {
 		t.Fatalf("ApplyIdentity: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestApplyIdentity_IdempotentSecondRunReportsNoChanges(t *testing.T) {
 		SigningKey:    strPtr("ABCDEF1234567890"),
 	}
 
-	first, err := ApplyIdentity(context.Background(), c, repo, identity)
+	first, err := ApplyIdentity(context.Background(), c, repo, "example-project", "work", identity)
 	if err != nil {
 		t.Fatalf("first ApplyIdentity: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestApplyIdentity_IdempotentSecondRunReportsNoChanges(t *testing.T) {
 		t.Fatalf("first report.Written = %+v, want 4 entries", first.Written)
 	}
 
-	second, err := ApplyIdentity(context.Background(), c, repo, identity)
+	second, err := ApplyIdentity(context.Background(), c, repo, "example-project", "work", identity)
 	if err != nil {
 		t.Fatalf("second ApplyIdentity: %v", err)
 	}

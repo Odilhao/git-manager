@@ -28,8 +28,9 @@ type IdentityReport struct {
 // only (git config --local, per the project's identity-scope invariant — a
 // field is never applied at --global or --system). A nil field on identity
 // was never declared at any config level and is left untouched: no read, no
-// write, no key in the report.
-func ApplyIdentity(ctx context.Context, c identityClient, repo string, identity config.ResolvedIdentity) (IdentityReport, error) {
+// write, no key in the report. repoName and groupName are used only for error
+// context wrapping; pass empty string for groupName if the repo is not in a group.
+func ApplyIdentity(ctx context.Context, c identityClient, repo, repoName, groupName string, identity config.ResolvedIdentity) (IdentityReport, error) {
 	var report IdentityReport
 
 	if identity.UserName != nil {
@@ -50,7 +51,14 @@ func ApplyIdentity(ctx context.Context, c identityClient, repo string, identity 
 	if identity.SigningMethod != nil {
 		key, value, err := signingMethodConfig(*identity.SigningMethod)
 		if err != nil {
-			return report, err
+			// Wrap error with identifying context: repo name, path, and group when applicable.
+			var contextStr string
+			if groupName != "" {
+				contextStr = fmt.Sprintf("repo %q in group %q (%s)", repoName, groupName, repo)
+			} else {
+				contextStr = fmt.Sprintf("repo %q (%s)", repoName, repo)
+			}
+			return report, fmt.Errorf("sync: %s: %w", contextStr, err)
 		}
 		if err := setIfChanged(ctx, c, repo, key, value, &report); err != nil {
 			return report, err

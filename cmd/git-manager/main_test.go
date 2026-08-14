@@ -344,6 +344,7 @@ func TestRunSync_JSONOutcomeFailureGolden(t *testing.T) {
 		t.Fatalf("report.Repos[0].DurationMS = %d, want >= 0", report.Repos[0].DurationMS)
 	}
 
+	report.Config = "<placeholder-config>"
 	report.Repos[0].DurationMS = 0
 	report.Repos[0].Path = "<placeholder-path>"
 	report.Repos[0].Error = "<placeholder-error>"
@@ -390,6 +391,7 @@ func TestRunSync_JSONOutcomePartialGolden(t *testing.T) {
 		t.Fatalf("report.Repos[0].Remotes.Updated = %+v, want the origin URL update recorded", report.Repos[0].Remotes.Updated)
 	}
 
+	report.Config = "<placeholder-config>"
 	report.Repos[0].DurationMS = 0
 	report.Repos[0].Path = "<placeholder-path>"
 	report.Repos[0].Error = "<placeholder-error>"
@@ -603,6 +605,7 @@ func TestRunStatus_JSONOutcomeGolden(t *testing.T) {
 		t.Fatalf("negative duration_ms: report=%d repo=%d", report.DurationMS, report.Repos[0].DurationMS)
 	}
 
+	report.Config = ""
 	report.Repos[0].DurationMS = 0
 	report.Repos[0].Path = "<placeholder-path>"
 	for i := range report.Repos[0].Remotes.Updated {
@@ -649,6 +652,7 @@ func TestRunStatus_JSONOutcomeFailureGolden(t *testing.T) {
 		t.Fatal("report.Repos[0].Error is empty, want the no-origin error")
 	}
 
+	report.Config = ""
 	report.Repos[0].DurationMS = 0
 	report.Repos[0].Path = "<placeholder-path>"
 	report.Repos[0].Error = "<placeholder-error>"
@@ -977,5 +981,208 @@ func TestRunSync_ProgressCallbackThreadSafety(t *testing.T) {
 	}
 	if len(report.Repos) != 4 {
 		t.Fatalf("report.Repos has %d repos, want 4", len(report.Repos))
+	}
+}
+
+// TestRunSync_ConfigPathInReport_Success verifies AC8: the resolved config
+// path appears in the JSON report on a successful run.
+func TestRunSync_ConfigPathInReport_Success(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	configPath := writeConfig(t, groupPath, fileURL(origin))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-config", configPath, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	var report sync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+
+	// AC8: config path must be in the report and must match the real config path
+	if report.Config == "" {
+		t.Fatal("report.Config is empty, want the resolved config path")
+	}
+	if report.Config != configPath {
+		t.Fatalf("report.Config = %q, want %q", report.Config, configPath)
+	}
+}
+
+// TestRunSync_ConfigPathInReport_Failure verifies AC8: the resolved config
+// path appears in the JSON report even on a failing run.
+func TestRunSync_ConfigPathInReport_Failure(t *testing.T) {
+	groupPath := t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	contents := "[[groups]]\n" +
+		"name = \"work\"\n" +
+		"path = \"" + filepath.ToSlash(groupPath) + "\"\n\n" +
+		"  [[groups.repos]]\n" +
+		"  name = \"no-origin\"\n"
+	if err := os.WriteFile(configPath, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-config", configPath, "--json"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit code when a repo fails to sync")
+	}
+
+	var report sync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+
+	// AC8: config path must be in the report even on failure
+	if report.Config == "" {
+		t.Fatal("report.Config is empty on failure, want the resolved config path")
+	}
+	if report.Config != configPath {
+		t.Fatalf("report.Config = %q, want %q", report.Config, configPath)
+	}
+}
+
+// TestRunSync_FailLineIncludesPathAndGroup verifies AC2: the FAIL line in
+// human-readable output includes path and group, matching the OK line format.
+func TestRunSync_FailLineIncludesPathAndGroup(t *testing.T) {
+	groupPath := t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	contents := "[[groups]]\n" +
+		"name = \"work\"\n" +
+		"path = \"" + filepath.ToSlash(groupPath) + "\"\n\n" +
+		"  [[groups.repos]]\n" +
+		"  name = \"no-origin\"\n"
+	if err := os.WriteFile(configPath, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-config", configPath}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit code when a repo fails to sync")
+	}
+
+	output := stdout.String()
+	// AC2: FAIL line must include path and group like OK does
+	if !strings.Contains(output, "FAIL") {
+		t.Fatalf("expected FAIL line in output, got: %s", output)
+	}
+	if !strings.Contains(output, groupPath) {
+		t.Fatalf("FAIL line missing path %q: %s", groupPath, output)
+	}
+	if !strings.Contains(output, "work") {
+		t.Fatalf("FAIL line missing group 'work': %s", output)
+	}
+}
+
+// TestRunSync_ProgressCallbackIncludesErrorText verifies AC3: the live
+// progress line includes error text on failure, not just the outcome.
+func TestRunSync_ProgressCallbackIncludesErrorText(t *testing.T) {
+	groupPath := t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	// Use "example-project" (not "no-origin") so repo name doesn't contain
+	// substrings from the error text, proving the error text is actually printed.
+	contents := "[[groups]]\n" +
+		"name = \"work\"\n" +
+		"path = \"" + filepath.ToSlash(groupPath) + "\"\n\n" +
+		"  [[groups.repos]]\n" +
+		"  name = \"example-project\"\n"
+	if err := os.WriteFile(configPath, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"sync", "-config", configPath}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit code when a repo fails to sync")
+	}
+
+	stderrOutput := stderr.String()
+	// AC3: progress line must include error text, not just outcome.
+	// Assert the progress prefix exists:
+	if !strings.Contains(stderrOutput, "sync:") {
+		t.Fatalf("expected progress line with 'sync:' prefix, got: %s", stderrOutput)
+	}
+	// Assert the repo name appears:
+	if !strings.Contains(stderrOutput, "example-project") {
+		t.Fatalf("expected progress line with repo name 'example-project', got: %s", stderrOutput)
+	}
+	// Assert the actual error text is present (not just outcome "failure").
+	// The error for a repo with no origin and no checkout is:
+	// "sync: repo %q has no origin remote declared and no local checkout exists to clone"
+	// Assert on the unique substring from the actual error, not just outcome or repo name.
+	if !strings.Contains(stderrOutput, "has no origin remote declared") {
+		t.Fatalf("expected error text 'has no origin remote declared' in progress line, got: %s", stderrOutput)
+	}
+}
+
+// TestRunStatus_ConfigPathInReport_Success verifies AC8: the resolved config
+// path appears in the status report on a successful (in-sync) run.
+func TestRunStatus_ConfigPathInReport_Success(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	repoPath := filepath.Join(groupPath, "example-project")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runFixture(t, repoPath, "init", "-b", "main")
+	runFixture(t, repoPath, "remote", "add", "origin", fileURL(origin))
+	configPath := writeConfig(t, groupPath, fileURL(origin))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "-config", configPath, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	var report status.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+
+	// AC8: config path must be in the status report and must match the real config path
+	if report.Config == "" {
+		t.Fatal("report.Config is empty, want the resolved config path")
+	}
+	if report.Config != configPath {
+		t.Fatalf("report.Config = %q, want %q", report.Config, configPath)
+	}
+}
+
+// TestRunStatus_ConfigPathInReport_Failure verifies AC8: the resolved config
+// path appears in the status report even when a repo has errors/drift.
+func TestRunStatus_ConfigPathInReport_Failure(t *testing.T) {
+	origin := initBareRepo(t)
+	groupPath := t.TempDir()
+	repoPath := filepath.Join(groupPath, "example-project")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runFixture(t, repoPath, "init", "-b", "main")
+	// Point origin at a different URL to create drift
+	runFixture(t, repoPath, "remote", "add", "origin", "https://example.com/stale.git")
+	configPath := writeConfig(t, groupPath, fileURL(origin))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"status", "-config", configPath, "--json"}, &stdout, &stderr)
+	// Status returns 1 when there is drift
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 for drift; stderr: %s", code, stderr.String())
+	}
+
+	var report status.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+
+	// AC8: config path must be in the status report even with drift
+	if report.Config == "" {
+		t.Fatal("report.Config is empty on drift, want the resolved config path")
+	}
+	if report.Config != configPath {
+		t.Fatalf("report.Config = %q, want %q", report.Config, configPath)
 	}
 }

@@ -117,7 +117,7 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	opts := synccli.Options{DryRun: *dryRun, Overwrite: *overwrite || *prune, Concurrency: *parallel}
+	opts := synccli.Options{DryRun: *dryRun, Overwrite: *overwrite || *prune, Concurrency: *parallel, ConfigPath: *configPath}
 
 	// Set progress callback: default shows progress on stderr, -q/--quiet suppresses,
 	// --json also suppresses (and outputs JSON only).
@@ -127,7 +127,11 @@ func runSync(args []string, stdout, stderr io.Writer) int {
 		opts.ProgressCallback = func(e synccli.RepoEvent) {
 			mu.Lock()
 			defer mu.Unlock()
-			fmt.Fprintf(stderr, "sync: %s (%s)\n", e.Name, e.Result.Outcome)
+			if e.Result.Error != "" {
+				fmt.Fprintf(stderr, "sync: %s (%s): %s\n", e.Name, e.Result.Outcome, e.Result.Error)
+			} else {
+				fmt.Fprintf(stderr, "sync: %s (%s)\n", e.Name, e.Result.Outcome)
+			}
 		}
 	}
 
@@ -178,7 +182,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	syncReport := synccli.Run(context.Background(), gitcli.NewClient(), cfg, synccli.Options{DryRun: true, Concurrency: *parallel})
+	syncReport := synccli.Run(context.Background(), gitcli.NewClient(), cfg, synccli.Options{DryRun: true, Concurrency: *parallel, ConfigPath: *configPath})
 	report := status.FromSyncReport(syncReport)
 
 	if *jsonOut {
@@ -235,10 +239,18 @@ func printReport(w io.Writer, report synccli.Report) {
 	}
 	for _, r := range report.Repos {
 		if r.Error != "" {
-			fmt.Fprintf(w, "FAIL %s: %s [%s, %dms]\n", r.Name, r.Error, r.Outcome, r.DurationMS)
+			path := fmt.Sprintf("(%s)", r.Path)
+			if r.Group != "" {
+				path = fmt.Sprintf("(%s, group %q)", r.Path, r.Group)
+			}
+			fmt.Fprintf(w, "FAIL %s %s: %s [%s, %dms]\n", r.Name, path, r.Error, r.Outcome, r.DurationMS)
 			continue
 		}
-		fmt.Fprintf(w, "OK   %s (%s) [%s, %s, %dms]\n", r.Name, r.Path, verb, r.Outcome, r.DurationMS)
+		groupStr := ""
+		if r.Group != "" {
+			groupStr = fmt.Sprintf(", group %q", r.Group)
+		}
+		fmt.Fprintf(w, "OK   %s (%s%s) [%s, %s, %dms]\n", r.Name, r.Path, groupStr, verb, r.Outcome, r.DurationMS)
 		if r.Cloned {
 			fmt.Fprintln(w, "       cloned")
 		}
@@ -257,6 +269,9 @@ func printReport(w io.Writer, report synccli.Report) {
 		for _, f := range r.Fetches {
 			fmt.Fprintf(w, "       fetched:        %s (%s)\n", f.Remote, f.Report.Mode)
 		}
+	}
+	if report.Config != "" {
+		fmt.Fprintf(w, "config: %s\n", report.Config)
 	}
 	fmt.Fprintf(w, "%d repo(s), %d error(s)\n", len(report.Repos), report.ErrorCount)
 }
